@@ -1,7 +1,8 @@
 ---
 name: vritti-frontend
 description: >
-  Use this agent for frontend work on any Vritti React app (cloud-web, core-web, microfrontends).
+  Use this agent for frontend work on any Vritti React app.
+  Projects: vritti-cloud (cloud-web), vritti-core (core-web, core-app, commerce-mf), voop (upcoming).
   Invoke for: building pages, forms, tables, cards, modals, API integrations, layout changes,
   or any UI work using @vritti/quantum-ui components and Tailwind v4.
 model: inherit

@@ -1,7 +1,8 @@
 ---
 name: vritti-backend
 description: >
-  Use this agent for backend work on any Vritti NestJS server (cloud-server, core-server, api-nexus, microservices).
+  Use this agent for backend work on any Vritti NestJS server.
+  Projects: vritti-cloud (cloud-server), vritti-core (core-server, commerce-service), voop (upcoming).
   Invoke for: creating/modifying modules, REST APIs, webhook endpoints, Drizzle schemas, database migrations,
   domain/API layer refactoring, or troubleshooting database service integration.
 model: inherit
