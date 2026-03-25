@@ -215,4 +215,245 @@ Shared SDK types:
 
 ---
 
-Now implement the table endpoint for the resource the user described. Read the existing schema and entity DTO first, then build bottom-up: DTO → repository → service → controller.
+## 5. Frontend — Schema + Service + Hook
+
+### Schema type alias
+
+```typescript
+// In schemas/admin/zones.ts
+import type { TableResponse } from '@vritti/quantum-ui/api-response';
+
+export interface Zone {
+  id: string;
+  name: string;
+  code: string;
+  // ...
+}
+
+export type ZonesTableResponse = TableResponse<Zone>;
+```
+
+### Service function
+
+```typescript
+// In services/admin/zones.service.ts
+export function getZonesTable(): Promise<ZonesTableResponse> {
+  return axios.get<ZonesTableResponse>('admin-api/zones/table').then((r) => r.data);
+}
+```
+
+### Query hook
+
+```typescript
+// In hooks/admin/zones/useZones.ts
+export const ZONES_TABLE_KEY = ['admin', 'zones', 'table'] as const;
+
+export function useZones() {
+  return useQuery<ZonesTableResponse>({
+    queryKey: ZONES_TABLE_KEY,
+    queryFn: getZonesTable,
+  });
+}
+```
+
+---
+
+## 6. Frontend — Table Page
+
+### Page structure
+
+```typescript
+import { useDeleteZone, useZones } from '@hooks/admin/zones';
+import { ZONES_TABLE_KEY } from '@hooks/admin/zones/useZones';
+import { useQueryClient } from '@tanstack/react-query';
+import { Badge } from '@vritti/quantum-ui/Badge';
+import { Button } from '@vritti/quantum-ui/Button';
+import { type ColumnDef, DataTable, RowActions, useDataTable } from '@vritti/quantum-ui/DataTable';
+import { Dialog } from '@vritti/quantum-ui/Dialog';
+import { useConfirm, useDialog } from '@vritti/quantum-ui/hooks';
+import { PageHeader } from '@vritti/quantum-ui/PageHeader';
+import { buildSlug } from '@vritti/quantum-ui/utils/slug';
+import { Eye, MapPin, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import type { Zone } from '@/schemas/admin/zones';
+import { AddZoneForm } from './forms/AddZoneForm';
+import { EditZoneForm } from './forms/EditZoneForm';
+
+const TABLE_SLUG = 'zones';
+
+export const ZonesPage = () => {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { data: response, isLoading } = useZones();
+  const confirm = useConfirm();
+  const addDialog = useDialog();
+
+  const deleteMutation = useDeleteZone();
+
+  async function handleDelete(zone: Zone) {
+    const confirmed = await confirm({
+      title: `Delete ${zone.name}?`,
+      description: 'This action cannot be undone.',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    });
+    if (confirmed) deleteMutation.mutate(zone.id);
+  }
+
+  const { table } = useDataTable({
+    columns: getColumns({
+      onDelete: handleDelete,
+      onView: (zone) => navigate(`/zones/${buildSlug(zone.name, zone.id)}`),
+    }),
+    slug: TABLE_SLUG,
+    label: 'zone',
+    serverState: response,
+    enableRowSelection: false,
+    enableSorting: true,
+    enableMultiSort: false,
+    onStatePush: () => queryClient.invalidateQueries({ queryKey: ZONES_TABLE_KEY }),
+  });
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader title="Zones" description="Manage deployment zones" />
+      <DataTable
+        table={table}
+        isLoading={isLoading}
+        searchConfig={{
+          columns: [
+            { id: 'name', label: 'Name' },
+            { id: 'code', label: 'Code' },
+          ],
+          searchAll: true,
+        }}
+        toolbarActions={{
+          actions: (
+            <Button startAdornment={<Plus className="size-4" />} size="sm" onClick={addDialog.open}>
+              Add Zone
+            </Button>
+          ),
+        }}
+        emptyStateConfig={{
+          icon: MapPin,
+          title: 'No zones found',
+          description: 'Create your first zone to get started.',
+          action: (
+            <Button size="sm" onClick={addDialog.open}>
+              <Plus className="size-4" />
+              Add Zone
+            </Button>
+          ),
+        }}
+      />
+      <Dialog
+        open={addDialog.isOpen}
+        onOpenChange={(v) => { if (!v) addDialog.close(); }}
+        title="Add Zone"
+        description="Enter the details for the new zone."
+        content={(close) => <AddZoneForm onSuccess={close} onCancel={close} />}
+      />
+    </div>
+  );
+};
+```
+
+### Action column — always use `RowActions`
+
+`RowActions` auto-layouts based on visible action count:
+- 0 → nothing
+- 1 → single icon button
+- 2 → two icon buttons side-by-side
+- 3+ → first action as icon button + `⋮` overflow dropdown for the rest
+
+Use `hidden` for feature-flag visibility. The component re-layouts automatically.
+
+```typescript
+interface ColumnActions {
+  onDelete: (zone: Zone) => void;
+  onView: (zone: Zone) => void;
+}
+
+function getColumns({ onDelete, onView }: ColumnActions): ColumnDef<Zone, unknown>[] {
+  return [
+    { accessorKey: 'name', header: 'Name' },
+    {
+      accessorKey: 'code',
+      header: 'Code',
+      cell: ({ row }) => (
+        <Badge variant="outline" className="font-mono text-[10px] font-medium">
+          {row.original.code}
+        </Badge>
+      ),
+    },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => (
+        <RowActions
+          actions={[
+            { id: 'view', icon: Eye, label: 'View', onClick: () => onView(row.original) },
+            {
+              id: 'edit',
+              icon: Pencil,
+              label: 'Edit',
+              dialog: {
+                title: 'Edit Zone',
+                description: 'Update zone details.',
+                content: (close) => <EditZoneForm zone={row.original} onSuccess={close} onCancel={close} />,
+              },
+            },
+            {
+              id: 'delete',
+              icon: Trash2,
+              label: 'Delete',
+              variant: 'destructive',
+              disabled: !row.original.canDelete,
+              onClick: () => onDelete(row.original),
+            },
+          ]}
+        />
+      ),
+      enableSorting: false,
+      enableHiding: false,
+    },
+  ];
+}
+```
+
+### RowAction props reference
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `id` | `string` | Unique identifier |
+| `icon` | `LucideIcon` | Icon component |
+| `label` | `string` | Accessible label / dropdown text |
+| `onClick` | `() => void` | Click handler (mutually exclusive with `dialog`) |
+| `dialog` | `{ title, description, content }` | Opens a dialog instead |
+| `variant` | `'default' \| 'destructive'` | Styling variant |
+| `disabled` | `boolean` | Disables the action |
+| `hidden` | `boolean` | Hides the action (for feature flags) |
+
+---
+
+## Canonical references
+
+**Backend** — the Region module:
+- `cloud-server/src/modules/admin-api/region/controllers/region.controller.ts`
+- `cloud-server/src/modules/domain/region/services/region.service.ts`
+- `cloud-server/src/modules/domain/region/repositories/region.repository.ts`
+- `cloud-server/src/modules/admin-api/region/dto/response/regions-response.dto.ts`
+
+**Frontend** — the Industries page:
+- `cloud-web/src/pages/admin/industries/IndustriesPage.tsx`
+- `cloud-web/src/services/admin/industries.service.ts`
+- `cloud-web/src/hooks/admin/industries/useIndustries.ts`
+- `cloud-web/src/schemas/admin/industries.ts`
+
+Shared SDK types:
+- `api-sdk/src/database/dto/table-response.dto.ts` — `TableResponseDto<T>` base class
+- `api-sdk/src/database/filter/filter.processor.ts` — `FilterProcessor`, `FieldMap`, `FieldDefinition`
+
+---
+
+Now implement the table endpoint for the resource the user described. Read the existing schema and entity DTO first, then build bottom-up: backend (DTO → repository → service → controller), then frontend (schema → service → hook → page).
