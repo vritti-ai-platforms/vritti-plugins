@@ -1,11 +1,11 @@
 {
-  "name": "vritti-dev-tools",
-  "description": "Vritti development conventions, agents, skills, and hooks for NestJS + React + Drizzle monorepo projects",
-  "version": "1.0.0",
-  "author": {
-    "name": "Vritti AI"
-  },
-  "homepage": "https://github.com/vrittiai/vritti-plugins",
-  "repository": "https://github.com/vrittiai/vritti-plugins",
-  "license": "UNLICENSED"
+	"name": "vritti-dev-tools",
+	"description": "Vritti development conventions, agents, skills, and hooks for NestJS + React + Drizzle monorepo projects",
+	"version": "1.0.0",
+	"author": {
+		"name": "Vritti AI"
+	},
+	"homepage": "https://github.com/vritti-ai-platforms/vritti-plugins",
+	"repository": "https://github.com/vritti-ai-platforms/vritti-plugins",
+	"license": "UNLICENSED"
 }
