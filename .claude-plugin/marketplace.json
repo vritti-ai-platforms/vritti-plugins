@@ -1,15 +1,15 @@
 {
-  "name": "vritti-plugins",
-  "description": "Official Vritti AI Claude Code plugins",
-  "owner": {
-    "name": "Vritti AI"
-  },
-  "plugins": [
-    {
-      "name": "vritti-dev-tools",
-      "source": "./vritti-dev-tools",
-      "description": "Development conventions, agents, skills, and hooks for Vritti monorepo projects",
-      "version": "1.0.0"
-    }
-  ]
+	"name": "vritti-plugins",
+	"description": "Official Vritti AI Claude Code plugins",
+	"owner": {
+		"name": "Vritti AI"
+	},
+	"plugins": [
+		{
+			"name": "vritti-dev-tools",
+			"source": "./vritti-dev-tools",
+			"description": "Development conventions, agents, skills, and hooks for Vritti monorepo projects",
+			"version": "1.0.1"
+		}
+	]
 }
