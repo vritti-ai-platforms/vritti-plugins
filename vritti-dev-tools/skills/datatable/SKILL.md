@@ -1,3 +1,8 @@
+---
+name: datatable
+description: Creates a full-stack data table — backend table/import/export endpoints + frontend DataTable page with import/export and row selection. Use when adding a new table view for a domain entity.
+---
+
 You are implementing a table-backed endpoint in the Vritti backend. Follow this pattern exactly.
 
 A table endpoint has four parts: Response DTO → Repository method → Service method → Controller endpoint.
@@ -32,73 +37,97 @@ export class ZoneTableResponseDto extends TableResponseDto<ZoneDto> {
 
 ---
 
-## 2. Repository — `findAllWithCounts`
+## 2. Repository — `findAllForTable` using `findAllAndCount`
 
-Options object, parallel count + data queries. Defaults (`limit = 20`, `offset = 0`) in destructuring.
+Use the base class `this.findAllAndCount<T>()` which supports `select`, `leftJoins`, `groupBy`, `where`, `orderBy`, `limit`, `offset`. It runs count + data queries in parallel.
 
 **Simple case — no joins:**
 ```typescript
-type ZoneRow = Zone;
-
-async findAllWithCounts(options: {
+async findAllForTable(options: {
   where?: SQL;
   orderBy?: SQL[];
-  limit?: number;
-  offset?: number;
-}): Promise<{ rows: ZoneRow[]; total: number }> {
-  const { where, orderBy, limit = 20, offset = 0 } = options;
-  const [countResult, rows] = await Promise.all([
-    this.db.select({ total: count() }).from(zones).where(where).then((r) => r[0]?.total ?? 0),
-    this.db
-      .select(getTableColumns(zones))
-      .from(zones)
-      .where(where)
-      .orderBy(...(orderBy?.length ? orderBy : [asc(zones.name)]))
-      .limit(limit)
-      .offset(offset),
-  ]);
-  return { rows, total: Number(countResult) };
+  limit: number;
+  offset: number;
+}): Promise<{ result: Zone[]; count: number }> {
+  return this.findAllAndCount<Zone>(options);
 }
 ```
 
-**With a FK join (one related object):**
-```typescript
-type ZoneWithRegion = Zone & { region: { id: string; name: string } | null };
+**With joins and aggregations — use `leftJoins` + `groupBy` + `array_agg`:**
 
-// In select:
-region: sql<{ id: string; name: string } | null>`
-  CASE WHEN ${regions.id} IS NOT NULL
-    THEN json_build_object('id', ${regions.id}, 'name', ${regions.name})
-    ELSE NULL
-  END
-`,
-// After .from(zones):
-.leftJoin(regions, eq(regions.id, zones.regionId))
-// groupBy required when mixing aggregate-style SQL:
-.groupBy(zones.id, regions.id, regions.name)
-```
-
-**With a many-to-many join (array of related objects):**
 ```typescript
-type ZoneWithProviders = Zone & {
-  providerCount: number;
-  providers: Array<{ id: string; name: string }>;
+import { countDistinct, eq, sql } from '@vritti/api-sdk/drizzle-orm';
+
+export type FeatureTableRow = Feature & {
+  permissions: string[];
+  platforms: string[];
+  appFeatureCount: number;
 };
 
-// In select:
-providerCount: count(zoneProviders.providerId),
-providers: sql<Array<{ id: string; name: string }>>`
-  json_agg(
-    json_build_object('id', ${providers.id}, 'name', ${providers.name})
-  ) FILTER (WHERE ${providers.id} IS NOT NULL)
-`,
-// After .from(zones):
-.leftJoin(zoneProviders, eq(zoneProviders.zoneId, zones.id))
-.leftJoin(providers, eq(providers.id, zoneProviders.providerId))
-.groupBy(zones.id)
+async findAllForTable(options: {
+  where?: SQL;
+  orderBy?: SQL[];
+  limit: number;
+  offset: number;
+}): Promise<{ result: FeatureTableRow[]; count: number }> {
+  return this.findAllAndCount<FeatureTableRow>({
+    select: {
+      id: features.id,
+      versionId: features.versionId,
+      code: features.code,
+      name: features.name,
+      description: features.description,
+      icon: features.icon,
+      isActive: features.isActive,
+      sortOrder: features.sortOrder,
+      createdAt: features.createdAt,
+      updatedAt: features.updatedAt,
+      permissions: sql<string[]>`array_remove(array_agg(distinct ${featurePermissions.type}), null)`.mapWith({
+        mapFromDriverValue: (value: string) => (value === '{}' || !value ? [] : value.slice(1, -1).split(',')),
+      }),
+      platforms: sql<string[]>`array_remove(array_agg(distinct ${microfrontends.platform}), null)`.mapWith({
+        mapFromDriverValue: (value: string) => (value === '{}' || !value ? [] : value.slice(1, -1).split(',')),
+      }),
+      appFeatureCount: countDistinct(appFeatures.id),
+    },
+    leftJoins: [
+      { table: featurePermissions, on: eq(featurePermissions.featureId, features.id) },
+      { table: featureMicrofrontends, on: eq(featureMicrofrontends.featureId, features.id) },
+      { table: microfrontends, on: eq(microfrontends.id, featureMicrofrontends.microfrontendId) },
+      { table: appFeatures, on: eq(appFeatures.featureId, features.id) },
+    ],
+    groupBy: [features.id],
+    ...options,
+  });
+}
 ```
 
-> `FILTER (WHERE ... IS NOT NULL)` prevents null sentinel values in the aggregated array.
+### `findAllAndCount` options reference
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `select` | `Record<string, Column \| SQL>` | Custom select fields (omit for `select *`) |
+| `where` | `SQL` | WHERE clause |
+| `orderBy` | `SQL[]` | ORDER BY clauses |
+| `limit` | `number` | LIMIT |
+| `offset` | `number` | OFFSET |
+| `leftJoin` | `{ table, on }` | Single LEFT JOIN (legacy) |
+| `leftJoins` | `{ table, on }[]` | Multiple LEFT JOINs |
+| `groupBy` | `(Column \| SQL)[]` | GROUP BY clause |
+
+### PostgreSQL array aggregation with `.mapWith()`
+
+`node-postgres` returns PostgreSQL arrays as string literals (`"{A,B,C}"`), not JS arrays. Use `.mapWith()` to parse:
+
+```typescript
+sql<string[]>`array_remove(array_agg(distinct ${col}), null)`.mapWith({
+  mapFromDriverValue: (value: string) => (value === '{}' || !value ? [] : value.slice(1, -1).split(',')),
+})
+```
+
+- `array_agg(distinct col)` — aggregates unique values into a PG array
+- `array_remove(..., null)` — removes nulls from LEFT JOIN misses
+- `.mapWith()` — parses `"{A,B}"` → `['A', 'B']` at driver level
 
 ---
 
@@ -107,54 +136,32 @@ providers: sql<Array<{ id: string; name: string }>>`
 `FIELD_MAP` is a static readonly whitelist. Only include fields the frontend can filter/search/sort.
 
 ```typescript
-import { Injectable } from '@nestjs/common';
-import { and, sql } from '@vritti/api-sdk/drizzle-orm';
-import { FilterProcessor, NotFoundException, SuccessResponseDto, type FieldMap } from '@vritti/api-sdk';
-import { zones, zoneProviders } from '@/db/schema';
-import { TableViewService } from '../../table-view/services/table-view.service';
-import { ZoneDto } from '../dto/entity/zone.dto';
-import { ZoneTableResponseDto } from '../dto/response/zone-table-response.dto';
-import { ZoneRepository } from '../repositories/zone.repository';
-
 @Injectable()
-export class ZoneService {
-  private readonly logger = new Logger(ZoneService.name);
+export class FeatureService {
+  private readonly logger = new Logger(FeatureService.name);
 
   private static readonly FIELD_MAP: FieldMap = {
-    name:     { column: zones.name,     type: 'string'  },
-    code:     { column: zones.code,     type: 'string'  },
-    isActive: { column: zones.isActive, type: 'boolean' },
-    regionId: { column: zones.regionId, type: 'string'  },
-    // Many-to-many join filter — use expression, not column
-    providerId: {
-      expression: (value) =>
-        sql`${zones.id} IN (SELECT zone_id FROM zone_providers WHERE provider_id = ${String(value)})`,
-      type: 'string',
-    },
+    name: { column: features.name, type: 'string' },
+    code: { column: features.code, type: 'string' },
   };
 
   constructor(
-    private readonly zoneRepository: ZoneRepository,
-    private readonly tableViewService: TableViewService,
+    private readonly featureRepository: FeatureRepository,
+    private readonly dataTableStateService: DataTableStateService,
   ) {}
 
-  // Returns paginated zones with current filter/sort/search/pagination state applied
-  async findForTable(userId: string): Promise<ZoneTableResponseDto> {
-    const { state, activeViewId } = await this.tableViewService.getCurrentState(userId, 'zones');
+  async findForTable(userId: string): Promise<FeatureTableResponseDto> {
+    const { state, activeViewId } = await this.dataTableStateService.getCurrentState(userId, 'features');
     const where = and(
-      FilterProcessor.buildWhere(state.filters, ZoneService.FIELD_MAP),
-      FilterProcessor.buildSearch(state.search, ZoneService.FIELD_MAP),
+      FilterProcessor.buildWhere(state.filters, FeatureService.FIELD_MAP),
+      FilterProcessor.buildSearch(state.search, FeatureService.FIELD_MAP),
     );
+    const orderBy = FilterProcessor.buildOrderBy(state.sort, FeatureService.FIELD_MAP);
     const { limit = 20, offset = 0 } = state.pagination ?? {};
-    const { rows, total } = await this.zoneRepository.findAllWithCounts({
-      where,
-      orderBy: FilterProcessor.buildOrderBy(state.sort, ZoneService.FIELD_MAP),
-      limit,
-      offset,
-    });
+    const { result, count } = await this.featureRepository.findAllForTable({ where, orderBy, limit, offset });
     return {
-      result: rows.map((z) => ZoneDto.from(z)),
-      count: total,
+      result: result.map((r) => FeatureDto.from(r, r.appFeatureCount, r.permissions, r.platforms)),
+      count,
       state,
       activeViewId,
     };
@@ -166,52 +173,24 @@ export class ZoneService {
 | Scenario | Pattern |
 |----------|---------|
 | Own column (string/number) | `{ column: zones.name, type: 'string' }` |
-| Own column (boolean) | `{ column: zones.isActive, type: 'boolean' }` — auto-converts `'true'`/`1` |
+| Own column (boolean) | `{ column: zones.isActive, type: 'boolean' }` |
 | FK column | `{ column: zones.regionId, type: 'string' }` |
 | Many-to-many join | `{ expression: (v) => sql\`...\`, type: 'string' }` |
-
-Unknown fields are **silently skipped** (security whitelist — prevents SQL injection).
-Expression fields are skipped by `buildSearch` and `buildOrderBy` (column-only operations).
 
 ---
 
 ## 4. Controller endpoint
 
-Thin — log, extract `@UserId()`, return service result directly (no `return await`).
+Thin — log, extract `@UserId()`, return service result directly.
 
 ```typescript
-// Returns paginated zones for the data table
 @Get('table')
-@ApiFindForTableZones()
-findForTable(@UserId() userId: string): Promise<ZoneTableResponseDto> {
-  this.logger.log('GET /admin-api/zones/table');
-  return this.zoneService.findForTable(userId);
+@ApiFindForTableFeatures()
+findForTable(@UserId() userId: string): Promise<FeatureTableResponseDto> {
+  this.logger.log('GET /admin-api/features/table');
+  return this.featureService.findForTable(userId);
 }
 ```
-
-Create the Swagger decorator in `docs/zone.docs.ts`:
-```typescript
-export function ApiFindForTableZones() {
-  return applyDecorators(
-    ApiOperation({ summary: 'Get zones for data table' }),
-    ApiResponse({ status: 200, type: ZoneTableResponseDto }),
-  );
-}
-```
-
----
-
-## Canonical reference
-
-The **Region module** is the complete working example:
-- `cloud-server/src/modules/admin-api/region/controllers/region.controller.ts`
-- `cloud-server/src/modules/admin-api/region/services/region.service.ts`
-- `cloud-server/src/modules/admin-api/region/repositories/region.repository.ts`
-- `cloud-server/src/modules/admin-api/region/dto/response/regions-response.dto.ts`
-
-Shared SDK types:
-- `api-sdk/src/database/dto/table-response.dto.ts` — `TableResponseDto<T>` base class
-- `api-sdk/src/database/filter/filter.processor.ts` — `FilterProcessor`, `FieldMap`, `FieldDefinition`
 
 ---
 
@@ -220,38 +199,40 @@ Shared SDK types:
 ### Schema type alias
 
 ```typescript
-// In schemas/admin/zones.ts
 import type { TableResponse } from '@vritti/quantum-ui/api-response';
 
-export interface Zone {
+export interface Feature {
   id: string;
-  name: string;
   code: string;
-  // ...
+  name: string;
+  icon: string;
+  description: string | null;
+  permissions: string[];
+  platforms: string[];
+  appCount: number;
+  canDelete: boolean;
 }
 
-export type ZonesTableResponse = TableResponse<Zone>;
+export type FeaturesTableResponse = TableResponse<Feature>;
 ```
 
 ### Service function
 
 ```typescript
-// In services/admin/zones.service.ts
-export function getZonesTable(): Promise<ZonesTableResponse> {
-  return axios.get<ZonesTableResponse>('admin-api/zones/table').then((r) => r.data);
+export function getFeatures(versionId: string): Promise<FeaturesTableResponse> {
+  return axios.get<FeaturesTableResponse>(`admin-api/versions/${versionId}/features/table`).then((r) => r.data);
 }
 ```
 
 ### Query hook
 
 ```typescript
-// In hooks/admin/zones/useZones.ts
-export const ZONES_TABLE_KEY = ['admin', 'zones', 'table'] as const;
+export const FEATURES_QUERY_KEY = (versionId: string) => ['admin', 'features', versionId, 'table'] as const;
 
-export function useZones() {
-  return useQuery<ZonesTableResponse>({
-    queryKey: ZONES_TABLE_KEY,
-    queryFn: getZonesTable,
+export function useFeatures(versionId: string) {
+  return useQuery<FeaturesTableResponse>({
+    queryKey: FEATURES_QUERY_KEY(versionId),
+    queryFn: () => getFeatures(versionId),
   });
 }
 ```
@@ -260,199 +241,191 @@ export function useZones() {
 
 ## 6. Frontend — Table Page
 
-### Page structure
+### Page with import/export and row selection
 
 ```typescript
-import { useDeleteZone, useZones } from '@hooks/admin/zones';
-import { ZONES_TABLE_KEY } from '@hooks/admin/zones/useZones';
+import { useFeatures } from '@hooks/admin/features';
+import { FEATURES_QUERY_KEY } from '@hooks/admin/features/useFeatures';
 import { useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@vritti/quantum-ui/Badge';
 import { Button } from '@vritti/quantum-ui/Button';
-import { type ColumnDef, DataTable, RowActions, useDataTable } from '@vritti/quantum-ui/DataTable';
+import { type ColumnDef, DataTable, RowActions, getSelectionColumn, useDataTable } from '@vritti/quantum-ui/DataTable';
 import { Dialog } from '@vritti/quantum-ui/Dialog';
-import { useConfirm, useDialog } from '@vritti/quantum-ui/hooks';
+import { useDialog } from '@vritti/quantum-ui/hooks';
 import { PageHeader } from '@vritti/quantum-ui/PageHeader';
-import { buildSlug } from '@vritti/quantum-ui/utils/slug';
-import { Eye, MapPin, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import type { Zone } from '@/schemas/admin/zones';
-import { AddZoneForm } from './forms/AddZoneForm';
-import { EditZoneForm } from './forms/EditZoneForm';
 
-const TABLE_SLUG = 'zones';
+const TABLE_SLUG = 'features';
 
-export const ZonesPage = () => {
-  const navigate = useNavigate();
+export const FeaturesPage = () => {
   const queryClient = useQueryClient();
-  const { data: response, isLoading } = useZones();
-  const confirm = useConfirm();
+  const { versionId } = useVersionContext();
+  const { data: response, isLoading } = useFeatures(versionId);
   const addDialog = useDialog();
 
-  const deleteMutation = useDeleteZone();
-
-  async function handleDelete(zone: Zone) {
-    const confirmed = await confirm({
-      title: `Delete ${zone.name}?`,
-      description: 'This action cannot be undone.',
-      confirmLabel: 'Delete',
-      variant: 'destructive',
-    });
-    if (confirmed) deleteMutation.mutate(zone.id);
-  }
-
   const { table } = useDataTable({
-    columns: getColumns({
-      onDelete: handleDelete,
-      onView: (zone) => navigate(`/zones/${buildSlug(zone.name, zone.id)}`),
-    }),
+    columns: getColumns({ onView }),
     slug: TABLE_SLUG,
-    label: 'zone',
+    label: 'feature',
     serverState: response,
-    enableRowSelection: false,
+    enableRowSelection: true,   // enables checkbox column
     enableSorting: true,
     enableMultiSort: false,
-    onStatePush: () => queryClient.invalidateQueries({ queryKey: ZONES_TABLE_KEY }),
+    onStatePush: () => queryClient.invalidateQueries({ queryKey: FEATURES_QUERY_KEY(versionId) }),
   });
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader title="Zones" description="Manage deployment zones" />
-      <DataTable
-        table={table}
-        isLoading={isLoading}
-        searchConfig={{
-          columns: [
-            { id: 'name', label: 'Name' },
-            { id: 'code', label: 'Code' },
-          ],
-          searchAll: true,
-        }}
-        toolbarActions={{
-          actions: (
-            <Button startAdornment={<Plus className="size-4" />} size="sm" onClick={addDialog.open}>
-              Add Zone
-            </Button>
-          ),
-        }}
-        emptyStateConfig={{
-          icon: MapPin,
-          title: 'No zones found',
-          description: 'Create your first zone to get started.',
-          action: (
-            <Button size="sm" onClick={addDialog.open}>
-              <Plus className="size-4" />
-              Add Zone
-            </Button>
-          ),
-        }}
-      />
-      <Dialog
-        open={addDialog.isOpen}
-        onOpenChange={(v) => { if (!v) addDialog.close(); }}
-        title="Add Zone"
-        description="Enter the details for the new zone."
-        content={(close) => <AddZoneForm onSuccess={close} onCancel={close} />}
-      />
-    </div>
+    <DataTable
+      table={table}
+      isLoading={isLoading}
+      searchConfig={{ columns: [{ id: 'code', label: 'Code' }, { id: 'name', label: 'Name' }], searchAll: true }}
+      importExport={{
+        columns: [
+          { key: 'code', label: 'Code' },
+          { key: 'name', label: 'Name' },
+          { key: 'icon', label: 'Icon' },
+          { key: 'description', label: 'Description' },
+          { key: 'permissions', label: 'Permissions' },
+        ],
+        sampleData: [
+          { code: 'products', name: 'Products', icon: 'package', description: 'Product catalog', permissions: 'VIEW,CREATE,EDIT,DELETE' },
+        ],
+        importEndpoint: `admin-api/versions/${versionId}/features/import`,
+        exportEndpoint: `admin-api/versions/${versionId}/features/export`,
+        transformExportRow: (row) => ({
+          code: row.code, name: row.name, icon: row.icon,
+          description: row.description ?? '',
+          permissions: row.permissions.join(','),
+        }),
+        filename: 'features',
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: FEATURES_QUERY_KEY(versionId) }),
+      }}
+      toolbarActions={{ actions: <Button size="sm" onClick={addDialog.open}><Plus /> Add Feature</Button> }}
+    />
   );
 };
 ```
 
-### Action column — always use `RowActions`
+### `importExport` prop reference
 
-`RowActions` auto-layouts based on visible action count:
-- 0 → nothing
-- 1 → single icon button
-- 2 → two icon buttons side-by-side
-- 3+ → first action as icon button + `⋮` overflow dropdown for the rest
+| Prop | Type | Description |
+|------|------|-------------|
+| `columns` | `{ key, label }[]` | Column definitions — same format for import and export |
+| `sampleData` | `Record<string, string>[]` | Sample rows for download template |
+| `importEndpoint` | `string` | `POST` endpoint (multipart file upload, all-or-nothing) |
+| `exportEndpoint` | `string` | `GET` endpoint (streams file download, `?format=` query param) |
+| `transformExportRow` | `(row: T) => Record<string, unknown>` | Transforms table row data for Export Selected (e.g., flatten arrays to comma-separated strings) |
+| `filename` | `string` | Filename prefix for exported files |
+| `onSuccess` | `() => void` | Called after successful import (typically invalidate queries) |
 
-Use `hidden` for feature-flag visibility. The component re-layouts automatically.
+**What DataTable handles internally:**
+- Toolbar dropdown with Import / Export All (submenu: CSV, Excel, Excel 97-2004, ODS, TSV)
+- Import dialog (upload → all-or-nothing → success summary or error table)
+- Export Selected via selection bar (CSV / Excel dropdown)
+- Sample file download in multiple formats
+
+### Row selection — `getSelectionColumn()`
+
+When `enableRowSelection: true`, prepend `getSelectionColumn<T>()` to the columns array:
 
 ```typescript
-interface ColumnActions {
-  onDelete: (zone: Zone) => void;
-  onView: (zone: Zone) => void;
-}
-
-function getColumns({ onDelete, onView }: ColumnActions): ColumnDef<Zone, unknown>[] {
+function getColumns({ onView }): ColumnDef<Feature, unknown>[] {
   return [
+    getSelectionColumn<Feature>(),
     { accessorKey: 'name', header: 'Name' },
-    {
-      accessorKey: 'code',
-      header: 'Code',
-      cell: ({ row }) => (
-        <Badge variant="outline" className="font-mono text-[10px] font-medium">
-          {row.original.code}
-        </Badge>
-      ),
-    },
-    {
-      id: 'actions',
-      header: '',
-      cell: ({ row }) => (
-        <RowActions
-          actions={[
-            { id: 'view', icon: Eye, label: 'View', onClick: () => onView(row.original) },
-            {
-              id: 'edit',
-              icon: Pencil,
-              label: 'Edit',
-              dialog: {
-                title: 'Edit Zone',
-                description: 'Update zone details.',
-                content: (close) => <EditZoneForm zone={row.original} onSuccess={close} onCancel={close} />,
-              },
-            },
-            {
-              id: 'delete',
-              icon: Trash2,
-              label: 'Delete',
-              variant: 'destructive',
-              disabled: !row.original.canDelete,
-              onClick: () => onDelete(row.original),
-            },
-          ]}
-        />
-      ),
-      enableSorting: false,
-      enableHiding: false,
-    },
+    // ...
   ];
 }
 ```
 
-### RowAction props reference
+### Action column — always use `RowActions`
 
-| Prop | Type | Description |
-|------|------|-------------|
-| `id` | `string` | Unique identifier |
-| `icon` | `LucideIcon` | Icon component |
-| `label` | `string` | Accessible label / dropdown text |
-| `onClick` | `() => void` | Click handler (mutually exclusive with `dialog`) |
-| `dialog` | `{ title, description, content }` | Opens a dialog instead |
-| `variant` | `'default' \| 'destructive'` | Styling variant |
-| `disabled` | `boolean` | Disables the action |
-| `hidden` | `boolean` | Hides the action (for feature flags) |
+See `table-action-conventions.md` for full reference.
+
+---
+
+## 7. Import/Export Endpoints
+
+### `POST /import` — All-or-nothing import
+
+Accepts multipart file upload. Validates all rows; if any invalid, returns errors and imports nothing. If all valid, upserts (creates new, updates existing by code).
+
+```typescript
+// Controller
+@Post('import')
+@HttpCode(HttpStatus.OK)
+@ApiConsumes('multipart/form-data')
+@ApiImportFeatures()
+async importFeatures(
+  @Param('versionId') versionId: string,
+  @UploadedFile() file: UploadedFileResult,
+): Promise<ImportResult> {
+  return this.featureService.importFromFile(file.buffer, versionId);
+}
+```
+
+**Response format (`ImportResult`):**
+```typescript
+// Success
+{ success: true, message: 'Import complete.', created: 3, updated: 2 }
+
+// Validation errors (nothing imported)
+{ success: false, rows: [{ index: 1, data: {...}, valid: false, errors: ['...'] }], summary: { total: 5, valid: 3, invalid: 2 } }
+```
+
+### `GET /export` — Streamed file download
+
+Accepts `?format=xlsx|csv|xls|ods|tsv` query param. Streams file via `FastifyReply`.
+
+```typescript
+// Controller
+@Get('export')
+@ApiExportFeatures()
+async exportFeatures(
+  @Param('versionId') versionId: string,
+  @Query('format') format: ExportFormat = 'xlsx',
+  @Res() reply: FastifyReply,
+): Promise<void> {
+  const buffer = await this.featureService.exportToBuffer(versionId, format);
+  reply.header('Content-Type', getExportMimeType(format));
+  reply.header('Content-Disposition', `attachment; filename="features.${getExportExt(format)}"`);
+  reply.header('Content-Length', buffer.length);
+  return reply.send(buffer);
+}
+```
+
+**Shared utility — `buildExportBuffer`:**
+```typescript
+import { buildExportBuffer, type ExportFormat, getExportMimeType, getExportExt } from '@/utils/build-export-buffer';
+```
+
+Converts `Record<string, unknown>[]` to a spreadsheet `Buffer` in the given format.
 
 ---
 
 ## Canonical references
 
-**Backend** — the Region module:
+**Backend — Features module** (joined table + import/export):
+- `cloud-server/src/modules/domain/version/feature/root/repositories/feature.repository.ts` — `findAllForTable` with `leftJoins` + `groupBy` + `array_agg`
+- `cloud-server/src/modules/domain/version/feature/root/services/feature.service.ts` — `findForTable`, `importFromFile`, `exportToBuffer`
+- `cloud-server/src/modules/admin-api/version/feature/root/controllers/feature.controller.ts` — table + import + export endpoints
+
+**Backend — Region module** (simple table, no joins):
 - `cloud-server/src/modules/admin-api/region/controllers/region.controller.ts`
 - `cloud-server/src/modules/domain/region/services/region.service.ts`
 - `cloud-server/src/modules/domain/region/repositories/region.repository.ts`
-- `cloud-server/src/modules/admin-api/region/dto/response/regions-response.dto.ts`
 
-**Frontend** — the Industries page:
+**Frontend — Features page** (import/export + row selection):
+- `cloud-web/src/pages/admin/versions/features/FeaturesPage.tsx`
+
+**Frontend — Industries page** (simple table):
 - `cloud-web/src/pages/admin/industries/IndustriesPage.tsx`
-- `cloud-web/src/services/admin/industries.service.ts`
-- `cloud-web/src/hooks/admin/industries/useIndustries.ts`
-- `cloud-web/src/schemas/admin/industries.ts`
 
-Shared SDK types:
-- `api-sdk/src/database/dto/table-response.dto.ts` — `TableResponseDto<T>` base class
-- `api-sdk/src/database/filter/filter.processor.ts` — `FilterProcessor`, `FieldMap`, `FieldDefinition`
+**Shared SDK types:**
+- `api-sdk/src/database/repositories/primary-base.repository.ts` — `findAllAndCount` with `leftJoins` + `groupBy`
+- `api-sdk/src/database/dto/table-response.dto.ts` — `TableResponseDto<T>`
+- `api-sdk/src/database/filter/filter.processor.ts` — `FilterProcessor`, `FieldMap`
+- `cloud-server/src/utils/build-export-buffer.ts` — `buildExportBuffer`, `ExportFormat`
+- `cloud-server/src/utils/validate-import-rows.ts` — `validateImportRows`, `ImportResult`
 
 ---
 
