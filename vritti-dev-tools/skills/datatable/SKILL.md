@@ -312,7 +312,7 @@ export const FeaturesPage = () => {
 | `columns` | `{ key, label }[]` | Column definitions — same format for import and export |
 | `sampleData` | `Record<string, string>[]` | Sample rows for download template |
 | `importEndpoint` | `string` | `POST` endpoint (multipart file upload, all-or-nothing) |
-| `exportEndpoint` | `string` | `GET` endpoint (streams file download, `?format=` query param) |
+| `exportEndpoint` | `string` | `GET` endpoint base path — format appended as path param (`/export/xlsx`) |
 | `transformExportRow` | `(row: T) => Record<string, unknown>` | Transforms table row data for Export Selected (e.g., flatten arrays to comma-separated strings) |
 | `filename` | `string` | Filename prefix for exported files |
 | `onSuccess` | `() => void` | Called after successful import (typically invalidate queries) |
@@ -358,31 +358,31 @@ Accepts multipart file upload. Validates all rows; if any invalid, returns error
 async importFeatures(
   @Param('versionId') versionId: string,
   @UploadedFile() file: UploadedFileResult,
-): Promise<ImportResult> {
+): Promise<ImportResponseDto> {
   return this.featureService.importFromFile(file.buffer, versionId);
 }
 ```
 
-**Response format (`ImportResult`):**
+**Response type: `ImportResponseDto` from `@vritti/api-sdk`**
 ```typescript
 // Success
-{ success: true, message: 'Import complete.', created: 3, updated: 2 }
+{ success: true, message: 'Import complete.', created: 3, updated: 2, skipped: 1 }
 
 // Validation errors (nothing imported)
-{ success: false, rows: [{ index: 1, data: {...}, valid: false, errors: ['...'] }], summary: { total: 5, valid: 3, invalid: 2 } }
+{ success: false, message: 'Validation failed.', rows: [{ index: 1, data: {...}, valid: false, errors: ['...'] }], summary: { total: 5, valid: 3, invalid: 2 } }
 ```
 
-### `GET /export` — Streamed file download
+### `GET /export/:format` — Streamed file download
 
-Accepts `?format=xlsx|csv|xls|ods|tsv` query param. Streams file via `FastifyReply`.
+Format is a path param: `xlsx`, `csv`, `xls`, `ods`, `tsv`. Streams file via `FastifyReply`.
 
 ```typescript
 // Controller
-@Get('export')
+@Get('export/:format')
 @ApiExportFeatures()
 async exportFeatures(
   @Param('versionId') versionId: string,
-  @Query('format') format: ExportFormat = 'xlsx',
+  @Param('format') format: ExportFormat,
   @Res() reply: FastifyReply,
 ): Promise<void> {
   const buffer = await this.featureService.exportToBuffer(versionId, format);
@@ -393,12 +393,12 @@ async exportFeatures(
 }
 ```
 
-**Shared utility — `buildExportBuffer`:**
+**Shared utility — `@vritti/api-sdk/xlsx`:**
 ```typescript
-import { buildExportBuffer, type ExportFormat, getExportMimeType, getExportExt } from '@/utils/build-export-buffer';
+import { type ExportFormat, buildExportBuffer, getExportExt, getExportMimeType } from '@vritti/api-sdk/xlsx';
 ```
 
-Converts `Record<string, unknown>[]` to a spreadsheet `Buffer` in the given format.
+Converts `Record<string, unknown>[]` to a spreadsheet `Buffer` in the given format. Isolated sub-path so xlsx isn't bundled with the main `@vritti/api-sdk` import.
 
 ---
 
@@ -424,7 +424,7 @@ Converts `Record<string, unknown>[]` to a spreadsheet `Buffer` in the given form
 - `api-sdk/src/database/repositories/primary-base.repository.ts` — `findAllAndCount` with `leftJoins` + `groupBy`
 - `api-sdk/src/database/dto/table-response.dto.ts` — `TableResponseDto<T>`
 - `api-sdk/src/database/filter/filter.processor.ts` — `FilterProcessor`, `FieldMap`
-- `cloud-server/src/utils/build-export-buffer.ts` — `buildExportBuffer`, `ExportFormat`
+- `@vritti/api-sdk/xlsx` — `buildExportBuffer`, `ExportFormat`, `getExportMimeType`, `getExportExt`
 - `cloud-server/src/utils/validate-import-rows.ts` — `validateImportRows`, `ImportResult`
 
 ---
