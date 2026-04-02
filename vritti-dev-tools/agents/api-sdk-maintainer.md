@@ -21,7 +21,7 @@ You are responsible for:
 
 ## Technical Context & Constraints
 
-**Package Location**: All operations must be performed within /Users/shashankraju/Documents/Vritti/api-sdk
+**Package Location**: The package lives at `../api-sdk` relative to the workspace root (sibling directory). All operations must be performed within that directory.
 
 **Technology Stack**:
 - NestJS framework (follow NestJS best practices and conventions)
@@ -101,7 +101,7 @@ The `HttpExceptionFilter` transforms exceptions into the RFC 9457 response forma
 ## Code Quality Standards
 
 You must maintain:
-- **Type Safety**: Leverage TypeScript's type system fully, avoid `any` types
+- **Type Safety**: Leverage TypeScript's type system fully. **NEVER use `any`** — always find or create the correct type. Use `unknown` when the type is truly indeterminate, then narrow with type guards. Import types from their source packages (e.g. `import type { MultipartFile } from '@fastify/multipart'`) rather than casting to `any`. If a third-party library lacks types, add a minimal type declaration — do not fall back to `any`.
 - **Testing**: Write unit tests for all new code, maintain >80% coverage
 - **NestJS Conventions**: Use decorators, dependency injection, and modular structure properly
 - **Error Handling**: Implement proper exception filters and error responses following RFC 9457
