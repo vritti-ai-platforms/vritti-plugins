@@ -25,10 +25,20 @@ Follow ALL `.claude/rules/` files in the current project. The key rules are summ
 ## Controller (`backend-controller.md`)
 - Thin HTTP layer: log, one service call, return
 - One controller → one service (inject only the primary service)
+- Every endpoint MUST log `METHOD /path` (e.g., `this.logger.log('GET /commerce-api/uom/base')`)
 - Use decorators: `@UserId()`, `@AccessToken()`, `@RefreshTokenCookie()`, `@Public()`
 - Explicit return types: `): Promise<ResponseDto>`
 - No business logic, no exceptions, no data transformation
 - No `return await` unless inside try-catch
+
+## Gateway Controller (`gateway-conventions.md`) — core-server commerce-gateway
+- Forwards HTTP → NATS to microservices
+- Controller logs `METHOD /commerce-api/<path>` on every endpoint
+- Query params MUST use a DTO class with validation + Swagger — never inline `@Query('field')`
+- Service logs NATS pattern + key params (e.g., `uom.create — name: Gram, symbol: g`)
+- Response types: create → `CreateResponseDto<T>`, update/delete → `SuccessResponseDto`
+- Success messages include entity name (e.g., `Unit "Gram" created successfully.`)
+- canDelete pattern: repository `hasReferences()`, DTO `canDelete: boolean`, service checks before delete, frontend disables button
 
 ## Service (`backend-service.md`)
 - All business logic lives here

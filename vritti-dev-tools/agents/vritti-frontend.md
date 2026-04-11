@@ -27,18 +27,21 @@ Follow ALL `.claude/rules/` files in the current project. The key rules are summ
 ## Service Pattern (`frontend-service.md`)
 - Pure axios functions — no React, no hooks, no state
 - Import axios from `@vritti/quantum-ui/axios`
-- `create()` returns the entity type, `update()`/`delete()` returns `SuccessResponse`
-- Export interfaces for DTOs and response types alongside functions
-- One service file per domain (e.g., `user.service.ts`, `auth.service.ts`)
+- `create()` returns `CreateResponse<T>`, `update()`/`delete()` returns `SuccessResponse`
+- Types (payload + response) live in `@/schemas/*` — never inline interfaces in service files
+- One service file per domain (e.g., `uom.service.ts`, `categories.service.ts`)
 - No `async/await` — return the axios promise chain directly
+- No `showSuccessToast: false` on GET requests — axios interceptor already skips GETs
 
 ## Hook Pattern (`frontend-hook.md`)
 - TanStack Query wrappers around services
 - `useQuery` for data fetching, `useMutation` for mutations
 - Use `Omit<UseMutationOptions, 'mutationFn'>` for type-safe options
 - Allow consumers to pass `onSuccess`, `onError` via options spread
-- Hierarchical query keys: `['domain', 'resource']` (e.g., `['auth', 'user']`)
-- Centralize exports via `index.ts` barrel files
+- Hierarchical query keys: `['domain', 'resource']` (e.g., `['commerce', 'uom', 'base']`)
+- Organize in domain folders: `hooks/uom/`, `hooks/categories/` — each with `index.ts` barrel
+- Import types from `@/schemas/*`, functions from `@/services/*` — never mix
+- Consumers import from barrel: `import { useBaseUnits } from '@/hooks/uom'`
 
 ## Component Imports (`frontend-conventions.md`)
 - Import from specific paths: `import { Button } from '@vritti/quantum-ui/Button'`
@@ -51,6 +54,16 @@ Follow ALL `.claude/rules/` files in the current project. The key rules are summ
 - Opacity: `bg-success/15` (15% opacity)
 - SVG fills: `style={{ fill: 'var(--color-foreground)' }}`
 - WRONG: `text-green-600`, `#16a34a`, `rgba(...)`, Tailwind palette colors
+
+## Component Style Rules
+- NEVER add custom className overrides (bg-*, text-*) to Badge — use built-in variants only
+- Use built-in component variants as designed — don't fight the design system with className hacks
+- Destructive icon buttons: `variant="ghost"` + `text-destructive hover:text-destructive` (matches RowActions pattern)
+- Surface hierarchy: `bg-background` (page) → `bg-card` (elevated panels/rows) — always test both light and dark themes
+- Form cancel buttons: use `data-cancel` attribute — Form component auto-wires `reset() + onCancel()`
+- Dialog forms: each dialog owns its own `useDialog`, `useForm`, mutation — self-contained components
+- Settings pages (small datasets): use `useSuspenseQuery` + `<Suspense fallback={<Skeleton />}>` — not DataTable
+- lodash: import from `@vritti/quantum-ui/lodash`, not `lodash` directly
 
 ## Spacing — ONLY standard Tailwind classes
 - Use predefined scale: `p-4`, `m-6`, `gap-8`, `pt-16`, `px-8`, `py-2.5`
