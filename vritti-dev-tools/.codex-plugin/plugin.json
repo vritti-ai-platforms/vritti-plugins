@@ -1,0 +1,24 @@
+{
+  "name": "vritti-dev-tools",
+  "version": "1.0.1",
+  "description": "Vritti development conventions, agents, skills, and hooks for monorepo projects",
+  "author": {
+    "name": "Vritti AI"
+  },
+  "homepage": "https://github.com/vritti-ai-platforms/vritti-plugins",
+  "repository": "https://github.com/vritti-ai-platforms/vritti-plugins",
+  "license": "UNLICENSED",
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Vritti Dev Tools",
+    "shortDescription": "Vritti coding rules, skills, and agents",
+    "longDescription": "Shared conventions, helpers, and workflows used across Vritti repositories.",
+    "developerName": "Vritti AI",
+    "category": "Productivity",
+    "capabilities": ["Write", "Interactive"],
+    "websiteURL": "https://github.com/vritti-ai-platforms/vritti-plugins",
+    "privacyPolicyURL": "https://github.com/vritti-ai-platforms/vritti-plugins",
+    "termsOfServiceURL": "https://github.com/vritti-ai-platforms/vritti-plugins"
+  }
+}
