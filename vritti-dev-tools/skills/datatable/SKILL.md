@@ -323,6 +323,74 @@ export const FeaturesPage = () => {
 - Export Selected via selection bar (CSV / Excel dropdown)
 - Sample file download in multiple formats
 
+### Cell rendering — typed cells, never hand-roll formatting
+
+`@vritti/quantum-ui/DataTable` exports typed cell components that share a single source of
+truth (`quantum-ui/lib/utils/format.ts`) with `DetailField`. They apply Intl number formatting,
+per-currency decimals (OMR=3, USD=2, JPY=0 via dinero), date-fns locale presets, and BU
+timezone resolution automatically.
+
+```tsx
+import { CurrencyCell, DateCell, DateTimeCell, NumberCell, StringCell } from '@vritti/quantum-ui/DataTable';
+
+const columns: ColumnDef<Row>[] = [
+  // Currency — value must be `{ currency, value }` major-units pair. Auto-mono.
+  { accessorKey: 'totalAmount', cell: ({ row }) => <CurrencyCell value={row.original.totalAmount} exchangeRate={row.original.exchangeRate} /> },
+
+  // Date-only — accepts "YYYY-MM-DD" or full ISO; renders date-only in UTC.
+  { accessorKey: 'orderDate', cell: ({ row }) => <DateCell value={row.original.orderDate} /> },
+
+  // Datetime — accepts full ISO; renders in `timeZone` or BU timezone (from context).
+  { accessorKey: 'createdAt', cell: ({ row }) => <DateTimeCell value={row.original.createdAt} timeZone={row.original.timezone} /> },
+
+  // Numeric — Intl-formatted, auto-mono. Don't hardcode `fractionDigits` — let locale drive.
+  { accessorKey: 'qty', cell: ({ row }) => <NumberCell value={row.original.qty} /> },
+
+  // Identifier-style string in monospace (PO numbers, codes, SKUs). Plain text → leave alone.
+  { accessorKey: 'poNumber', cell: ({ row }) => <StringCell value={row.original.poNumber} mono /> },
+];
+```
+
+**For composed cells** (mixed JSX, badges + values, conditional sub-formats), call the
+`useFormatters()` hook once at the top — each function returns `{ primary, secondary? }`:
+
+```tsx
+import { useFormatters } from '@vritti/quantum-ui/hooks';
+
+const fmt = useFormatters();
+const columns = useMemo<ColumnDef<Row>[]>(() => [
+  {
+    accessorKey: 'unitPrice',
+    cell: ({ row }) => (
+      <span className="font-mono">
+        {fmt.currency(row.original.unitPrice).primary}
+        {row.original.isCrossUom && (
+          <span className="text-xs text-muted-foreground">
+            {' '}({fmt.currency(row.original.altPrice).primary})
+          </span>
+        )}
+      </span>
+    ),
+  },
+], [fmt]); // include fmt in deps
+```
+
+**Forbidden patterns:**
+
+- `` `${money.currency} ${money.value}` `` — bypasses Intl + per-currency decimals
+- `new Date(x).toLocaleDateString()` / `.toLocaleString()` — bypasses locale + BU timezone
+- `value.toFixed(2)` — bypasses locale; hardcoded precision drifts from schema
+- `<span className="font-mono">{id}</span>` — use `<StringCell mono>` instead
+
+**Rules:**
+
+- Don't migrate plain text passthrough (`cell: ({ row }) => row.original.name`) to `<StringCell>` — that's pure churn.
+- Don't hardcode `fractionDigits`. If a value needs always-N decimals, the schema should carry currency/precision instead.
+- Don't fabricate `{ currency, value }` objects from preformatted strings or plain numbers. Use `<NumberCell>` and flag the backend schema for migration.
+- Status badges, RowActions, custom JSX trees — leave them alone. Formatters are for primitive value rendering.
+
+See `.claude/rules/value-formatting.md` in both `vritti-core` and `vritti-cloud` for the full convention.
+
 ### Row selection — `getSelectionColumn()`
 
 When `enableRowSelection: true`, prepend `getSelectionColumn<T>()` to the columns array:
@@ -416,6 +484,14 @@ Converts `Record<string, unknown>[]` to a spreadsheet `Buffer` in the given form
 
 **Frontend — Features page** (import/export + row selection):
 - `cloud-web/src/pages/admin/versions/features/FeaturesPage.tsx`
+
+**Frontend — LineItemsTab** (typed cells + useFormatters composed cell):
+- `vritti-core/apps/web-mfs/commerce-mf/src/features/purchase-orders/tabs/LineItemsTab.tsx`
+
+**Shared formatter module:**
+- `quantum-ui/lib/utils/format.ts` — pure formatters (single source of truth for DetailField + DataTable cells)
+- `quantum-ui/lib/hooks/useFormatters.ts` — hook binding formatters to locale / BU currency / BU timezone
+- `quantum-ui/lib/components/DataTable/cells/cells.tsx` — `StringCell`, `NumberCell`, `CurrencyCell`, `DateCell`, `DateTimeCell`
 
 **Frontend — Industries page** (simple table):
 - `cloud-web/src/pages/admin/industries/IndustriesPage.tsx`
