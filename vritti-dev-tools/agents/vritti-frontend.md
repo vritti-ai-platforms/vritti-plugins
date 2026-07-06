@@ -89,6 +89,17 @@ Follow ALL `.claude/rules/` files in the current project. The key rules are summ
 - API-backed selectors for domain entities (apps, plans, regions, etc.)
 - No destructuring in selector wrappers, no `as` casts
 
+## Permission Gating (`permission-gating.md`)
+- **Never hardcode permission-code strings.** Import `as const` maps from `@vritti/commerce-permissions/<feature>` (e.g. `import { UOM } from '@vritti/commerce-permissions/uom'` → `UOM.view`, `UOM.create`). Codes must match the cloud catalog exactly; a typo = permanently denied with no compiler help.
+- Two axes: **render = role** (`granted`), **enable = role ∧ plan ∧ BU** (`granted && !locked`). Not granted → hide; granted but locked → disabled + lock/upsell (`reason` `'PLAN'|'BU'`, `lockedTip({reason, unlockPlans})`).
+- Surfaces from `@vritti/quantum-ui/PermissionGate`:
+  - `<PermissionGate permission=… fallback=…>` — gate a **view/page/subtree**; children (and their queries) mount only when granted && !locked. `fallback` is a node or `(result) => node`. Must conditionally mount, never CSS-hide.
+  - `permission` prop on `Button` / `RowActions` / `DataTable` — gate a single **action** or **table** in place (hidden/disabled+lock).
+  - `usePermission(code)` → `{ granted, locked, reason, unlockPlans }` for bespoke cases.
+- **DataTable views — self-gate the query hook.** The `DataTable permission` prop gates the *display* only; it can't stop the consumer's query, so a guarded GET still 403s. Put `usePermission(CODE)` **inside** that feature's table query hook (`useXTable`) and fold it into `enabled: !!id && granted && !locked && (options?.enabled ?? true)`; return only the query result. Then the call site stays clean — `useXTable(id)` + `<DataTable permission={CODE} …/>`, no `usePermission`/`enabled` wiring repeated. Never expose `granted`/`locked` from the hook.
+- **Mutations**: gate write buttons with the write code (`permission={UOM.create}`); the API enforces it (403 → toast). **Views**: gate client-side; only guard a list/table GET on the server when the UI self-gates it.
+- Never pass `refetchType: 'all'` to `invalidateQueries` on a gated query — it force-refetches inactive/gated-out queries and hits the 403. Default active-only is safe.
+
 # Workflow
 
 1. Read the relevant `.claude/rules/` files and CLAUDE.md before starting
