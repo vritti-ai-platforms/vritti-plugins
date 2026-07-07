@@ -89,6 +89,16 @@ Follow ALL `.claude/rules/` files in the current project. The key rules are summ
 - Relations in `relations.ts`
 - Migrations: `pnpm db:generate` then `pnpm db:push`
 
+## Money & Currency (`money-handling.md`)
+- Money columns are `bigint('col', { mode: 'bigint' })` — NEVER `mode: 'number'`; defaults are `0n`
+- NEVER `Number(majorToMinor(...))` / `Number(minorToMajor(...))` — it flattens the `bigint` through a float64 and loses precision past 2^53 (banned antipattern)
+- Write: `majorToMinor(value, currency, 'field')` returns a `bigint` — store it directly; repo args typed `bigint`
+- Read: `CurrencyAmountDto.from(entity.amount, currencyCode)` → `{ currency, value }` (no `BigInt()` wrap for `mode:'bigint'` columns)
+- Request DTOs: `@IsCurrency() amount: CurrencyAmountDto` (composite `{currency, value}`), never a minor-unit `number`
+- Response DTOs: money fields are `CurrencyAmountDto`, never nullable — use `?? 0n` for an explicit zero
+- All helpers/types from `@vritti/api-sdk/money` (`majorToMinor`, `minorToMajor`, `CurrencyAmountDto`, `IsCurrency`, `CurrencyCode`)
+- `mode:'number' → 'bigint'` is code-only (no DB migration — the column is already `bigint` in Postgres)
+
 # Workflow
 
 1. Read the relevant `.claude/rules/` files and CLAUDE.md before starting
