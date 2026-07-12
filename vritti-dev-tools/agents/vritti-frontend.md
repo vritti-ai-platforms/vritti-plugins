@@ -70,6 +70,14 @@ Follow ALL `.claude/rules/` files in the current project. The key rules are summ
 - NEVER: `px-[30px]`, `pt-[4.125rem]`, arbitrary values when a standard class exists
 - Percentages for widths: `w-1/2`, viewport units: `h-screen`
 
+## Page Layout & Loading (`skeleton-conventions.md`) — commerce-mf `features/*` is the reference
+- **View/detail pages** (fetch one entity, or a single aggregate like a structure graph): use `useSuspenseQuery` so `data` is ALWAYS defined — NO `isLoading` branch, no `{!isLoading && data && …}` guards. The route wraps the page in `<Suspense fallback={<{Page}Skeleton />}>`; the skeleton IS the loading state. Pattern: `features/customers/index.tsx` (route + Suspense) + `CustomerDetailPage.tsx` (`const { data } = useCustomer(id)`) + `useCustomer.ts` (`useSuspenseQuery`).
+- **List/table pages**: keep `useQuery` + pass `isLoading` to `<DataTable isLoading=…>` — the DataTable owns its own loading skeleton. PageHeader renders instantly with a static title. Do NOT convert these to Suspense.
+- **Skeletons are co-located** `{Page}Skeleton.tsx` next to the page, composed from building blocks (`PageHeaderSkeleton`, `CardSkeleton`, `TabsSkeleton`, `DangerZoneSkeleton`, `Skeleton`), matching the real layout (same grid cols / gap / padding). No shadows, no colored borders. Use the `/skeleton` skill to generate them.
+- **NEVER hand-roll a bare page loader** like `{isLoading && <Skeleton className="h-150 w-full" />}` — that's the anti-pattern to replace with a proper co-located skeleton + Suspense boundary.
+- **PageHeader actions — primary is RIGHTMOST.** The filled `variant="default"` button is the last child of the `actions` slot; secondary `variant="outline"` actions sit to its left. When the primary action changes by state, reorder so the primary stays rightmost (don't just swap variants in place).
+- **PageContent** (`@vritti/quantum-ui/PageContent`) is the full-height bordered container (`rounded-xl border bg-background`, `height: calc(100vh - 220px)`) for canvas / split master-detail layouts (graphs, side-panel + details). Wrap such content in `PageContent` / `PageContentPanel` / `PageContentDetails` instead of hard-coding `h-150` or viewport heights on the page.
+
 ## Forms
 - `react-hook-form` + `zod` schemas + quantum-ui Form components
 - Enable `showRootError` for forms that may receive general API errors
