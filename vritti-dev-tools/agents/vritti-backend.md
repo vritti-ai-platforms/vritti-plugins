@@ -15,12 +15,27 @@ You are a backend architect for Vritti's NestJS + Fastify + Drizzle ORM servers.
 
 Follow ALL `.claude/rules/` files in the current project. The key rules are summarized below — always defer to the actual rule files for full details.
 
-## Module Structure (`backend-module-structure.md`)
-- Domain modules (`modules/domain/`): services + repos only, no controllers or DTOs
-- API modules (`modules/cloud-api/`, `core-api/`, `admin-api/`): controllers + DTOs + docs, import domain modules
-- One `module.ts` per top-level module — submodules are folders, not NestJS modules
-- Always use folders: `controllers/`, `services/`, `repositories/`, `dto/`, `docs/`
-- Zero `forwardRef`, zero duplicate providers
+## Folder Structure (`backend-module-structure.md`)
+- **Domain modules** (`modules/domain/`): services + repositories ONLY — no controllers, no DTOs. `@domain/` alias → `src/modules/domain/*`.
+- **API layers** (`cloud-api/`, `core-api/`, `admin-api/`, `select-api/`): controllers + DTOs + docs ONLY, no business logic. `select-api/` holds the select/dropdown (`findForSelect`) endpoints.
+- **Top-level modules** (`auth/`, `onboarding/`, `account/`): registered at the root path via `RouterModule` (NO `cloud-api`/`admin-api` prefix); use `@RequireSession(...)` for multi-session access.
+- **core-server gateway** (`commerce-gateway/`): `org-api/`, `site-api/`, `site-group-api/`, `le-api/` — forward HTTP → NATS to microservices (see Gateway Controller below).
+- One `module.ts` per TOP-LEVEL module — submodules are FOLDERS, not NestJS modules; the parent `module.ts` registers all their controllers/providers.
+  - Simple module → folders at root (`controllers/`, `services/`, `repositories/`, `dto/`, `docs/`).
+  - Complex module → `<module>.module.ts` + `root/` + one submodule folder per sub-path that has its OWN service + repository.
+- Always use folders (`controllers/`, `services/`, `repositories/`, `dto/`, `docs/`) — never a flat `x.controller.ts` beside `x.module.ts`.
+
+## Module Exposing / Providers
+- Domain modules are aggregated into `ServicesModule`, which is `@Global()` — API layers inject domain services everywhere WITHOUT importing each domain module.
+- A module's `exports: [...]` lists ONLY the services other modules inject (e.g. `exports: [AuthService, SessionService]`); keep repositories + internal providers unexported.
+- **Domain modules NEVER import each other.** A cross-table read goes in the service's OWN repository — never inject another domain's repo/module (no cross-domain coupling, no `forwardRef`).
+- Zero `forwardRef`, zero duplicate providers.
+- No `AdminApiModule` wrapper — individual API modules are registered directly in `AppModule`.
+
+## Codes (`code-conventions.md`)
+- Entity `code` fields use `@IsCode()` from `@vritti/api-sdk/decorators` (`@IsCode({ dotted: true })` for permission codes) — NEVER hand-roll `@Matches(/^[a-z…]/)`. Keep `@IsString()`/`@MaxLength()` alongside.
+- DB CHECK constraints use `codeCheck('<name>', table.code)` from `@vritti/api-sdk/drizzle-pg-core` — never `sql`… ~ '^[a-z…'`` or `= lower(code)` by hand.
+- Canonical format is lowercase-kebab `^[a-z][a-z0-9-]*$`; the pattern lives in `api-sdk/src/decorators/code-pattern.ts`.
 
 ## Controller (`backend-controller.md`)
 - Thin HTTP layer: log, one service call, return
