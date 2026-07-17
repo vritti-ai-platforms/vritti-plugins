@@ -31,6 +31,7 @@ The commerce-gateway forwards HTTP → NATS. Each feature folder is **flat and u
 - **No `root/`, no per-sub-resource subfolders, no per-feature `module.ts`.** Sub-resources fold in: the parent controller gains routes (`@Get('dimensions')`, `@Patch('dimensions/:id')`) and the parent service gains NAMESPACED methods (`listDimensions`, `createDimension`, `findDimensionById`). Fastify's radix router resolves `dimensions/count` vs `dimensions/:id` regardless of order.
 - Everything registers in the single `commerce-gateway.module.ts`.
 - Controller logs `METHOD /commerce-api/<path>`; query params ALWAYS use a DTO class (never inline `@Query('field')`).
+- DataTable state key is **scope-prefixed**: `getCurrentState(userId, 'commerce-<scope>-<feature>')` (org/le/site/site-group from the sub-app) and MUST equal the frontend `useDataTable({ slug })` EXACTLY — renaming one without the other loses the user's saved view.
 - Service forwards via `this.nats.send('commerce', 'org.<feature>.<sub>.<action>', payload)` — the `cmd` MUST match the microservice `@MessagePattern` EXACTLY (`org.uom.*`, `org.uom.dimensions.*`). Service logs the NATS pattern + key params.
 - Response types: create → `CreateResponseDto<T>`, update/delete → `SuccessResponseDto`, table → `TableResponseDto`, select → `SelectQueryResult`. Success messages include the entity name (e.g. `Unit "Gram" created successfully.`).
 - canDelete pattern: repo `hasReferences()`, DTO `canDelete: boolean`, service checks before delete, frontend disables the button.
