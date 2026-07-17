@@ -58,7 +58,13 @@ The commerce-gateway forwards HTTP → NATS. Each feature folder is **flat and u
 - Exceptions from `@vritti/api-sdk`; `ProblemOptions` for rich errors; `label`/`detail` don't repeat. (`error-handling.md`)
 
 ## Auth (`auth-architecture.md`)
-- Session types NEXUS/WEB/MOBILE/ADMIN/etc.; `@RequireSession(SessionTypeValues.WEB)`. RBAC: `@RequireFeature(FEATURE.featureCode)` + `@RequirePermission(FEATURE.action)`. Tokens SHA-256 hashed; refresh in httpOnly cookie.
+- Session types NEXUS/WEB/MOBILE/ADMIN/etc.; `@RequireSession(SessionTypeValues.WEB)`. RBAC: `@RequireFeature(FEATURE.featureCode)` at the class + `@RequirePermission(FEATURE.action)` per endpoint. Tokens SHA-256 hashed; refresh in httpOnly cookie.
+
+## Permission codes — 3 synced layers (a code MUST be identical in all three or the guard fails closed)
+1. **Lib** `libs/commerce-permissions/src/<feature>.ts` — `export const ORG_X = { featureCode, view, add, edit, delete, <sub>: {view,add,edit,delete} } as const` (full dotted codes `org.<feature>.<action>`; nested groups for sub-resources like uom's `dim`). Build the lib after edits (gateway imports the built `dist/`).
+- Import into gateway controllers and wire: `@Get*`→view, `@Post*`→add, `@Patch*`→edit, `@Delete*`→delete; sub-resource endpoints (`:id/<sub>/…`) → nested code; read-only tabs ride on parent `view`. `uom` gateway is the reference.
+2. **Catalog scripts** `vritti-core/scripts/catalog/<feature>.mjs` (+ `author-feature.mjs`) — author features/permissions into the cloud admin-api, entitle the plan, publish (PUBLISH pushes to LIVE deployments — consent-gated). Permission `code` in the def is the BARE action; `dependsOn` lists BARE sibling codes (`add/edit/delete→[view]`; `<sub>.view→[view]`; `<sub>.{add,edit,delete}→[<sub>.view]`). Run: `ADMIN_BASE_URL=… NODE_TLS_REJECT_UNAUTHORIZED=0 node scripts/catalog/<f>.mjs [--no-publish]`. Idempotent. `resolveFeature` matches (code, SCOPE) — a code exists per scope.
+3. **Controllers** — the `@RequirePermission` decorators from step 1.
 
 ## Database (Drizzle) / Money
 - Schemas in `src/db/schema/`; `type X = typeof x.$inferSelect`; migrations `pnpm db:generate` → `pnpm db:push`.
