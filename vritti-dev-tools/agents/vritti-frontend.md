@@ -46,7 +46,19 @@ Follow ALL `.claude/rules/` files in the current project. The key rules are summ
 ## Component Imports (`frontend-conventions.md`)
 - Import from specific paths: `import { Button } from '@vritti/quantum-ui/Button'`
 - NEVER use barrel imports: `import { Button } from '@vritti/quantum-ui'`
-- Import `cn` from `@vritti/quantum-ui/utils` for class merging
+- Import `cn` from `@vritti/quantum-ui/cn` for class merging
+- Check quantum-ui EXISTS before hand-rolling — if a component is missing, stop and ask (or use quantum-ui-architect to add it). Don't reinvent with raw HTML.
+
+### quantum-ui component map (each is its own subpath `@vritti/quantum-ui/<Name>`)
+- **Layout/detail**: `PageHeader`, `PageContent`, `Card`, `DetailField` (label+value; `type` string/number/currency/date/dateTime), `DetailHeader`, `Separator`, `Empty`, `Sidebar`, `Tabs` / `ViewTabs`, `Collapsible`, `DangerZone`, `Breadcrumb`, `StepProgressIndicator`, `Typography`, `Kbd`.
+- **Data**: `DataTable` (+ `RowActions`, cell comps `StringCell`/`NumberCell`/`CurrencyCell`/`DateCell`/`DateTimeCell`, `useDataTable` — all from `@vritti/quantum-ui/DataTable`), `TreeView`, `HierarchyGraph`, `Sortable`, charts (`AreaChart`/`BarChart`/`LineChart`/`PieChart`/`RadarChart`/`RadialChart`).
+- **Forms** (inside `Form`): `Form`+`FormSection` (`@vritti/quantum-ui/Form`), `TextField`, `TextArea`, `Select`, `Checkbox`/`CheckboxGroup`, `RadioGroup`, `Switch`, `Toggle`, `PhoneField`, `PasswordField`, `OTPField`, `CurrencyField`, `DatePicker`/`DateRangePicker`/`DateTimePicker`, `TokenInput`, `SearchBar`, `UploadFile`/`FilePreview`, `RichTextEditor`, `ScanBarcodeButton`, `Field`.
+- **Overlays/feedback**: `Dialog`, `DropdownMenu`, `Tooltip`, `Alert`, `Sonner` (toasts), `Spinner`, `Progress`, `Skeleton`, `Badge`, `Avatar`, `Button`, `ThemeToggle`.
+- **Gating**: `PermissionGate` (+ `usePermission`, `PermissionLockIcon`, `lockedTip`) — see Permission Gating below.
+- **Filters**: `ValueFilter`, and the `SelectFilter` family — see Select/Filter.
+- **Pre-built selectors** — `@vritti/quantum-ui/selects/<entity>`: app, business, category, cost-category, country, iso-country, currency, customer, deployment, feature, feature-permission, inventory-item, legal-entity, location, lot, modifier-group, plan, purchase-order(-item), quant, region, role, serial, site-group, supplier(-item), tax-class, tax-group, timezone, uom, user, variant-option, version (+ `CompanySelector`/`PersonSelector` at the root).
+- **Hooks/utils** (non-component subpaths): `@vritti/quantum-ui/hooks` (`useDialog`/`useConfirm`/`useSlugParams`/`useFormatters`), `/format`, `/money`, `/currency`, `/lodash`, `/date-fns`, `/decimal`, `/pluralize`, `/slug`, `/axios`, `/icons`, `/zod`, `/motion`, `/react-flow`, `/dnd-kit/*`.
+- **`permission` prop is built into**: `Button`, `DataTable`, `RowActions` items, `Tabs` `TabItem`, `DangerZone`. `DangerZone` also takes `showWarning` (bool) to render its `warning`. Don't wrap these in a manual `usePermission(...).granted &&` — pass `permission` and let the component gate.
 
 ## Color Tokens — NEVER hardcode colors
 - Use semantic tokens: `text-success`, `bg-destructive/15`, `text-primary`, `bg-muted`
