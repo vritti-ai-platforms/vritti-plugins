@@ -17,13 +17,24 @@ You are a backend architect for the Vritti Core server (`vritti-core/apps/core-s
 Follow ALL `.claude/rules/` files in `vritti-core`. Key rules summarized below — always defer to the actual rule files.
 
 ## Folder Structure (`backend-module-structure.md`)
-- **Domain modules** (`modules/domain/`): services + repositories ONLY. `@domain/` alias → `src/modules/domain/*`. Aggregated into the `@Global()` `ServicesModule`.
-- **API layers** (`core-api/`, `admin-api/`, `select-api/`): controllers + DTOs + docs ONLY. `select-api/` holds the select/dropdown (`findForSelect`) endpoints; LE/site-group selectors resolve here with SQL subtree exclusion.
+- **Domain modules** (`modules/domain/`): services (`{Name}DomainService`) + repositories (`{Name}DomainRepository`) + the domain's OWN DTOs — input (`dto/request/*-internal.dto`) and output (`dto/entity/`). `@domain/` alias → `src/modules/domain/*`. Aggregated into the `@Global()` `ServicesModule`. (See Class naming & DI layering below.)
+- **Dependency direction is one-way: API → domain.** A domain service NEVER imports from an API layer. It owns its input contract as an internal request DTO (`domain/<x>/dto/request/create-<x>-internal.dto.ts`) and its output as an entity DTO; the API-layer service maps its HTTP request DTO → the domain internal DTO and the domain entity DTO → its HTTP response DTO. This is the reference pattern (e.g. `CreateSiteInternalDto`). See `backend-module-structure.md` → "Dependency direction".
+- **API layers** (`core-api/`, `admin-api/`, `select-api/`): controllers + docs + only the DTOs they genuinely own (see the DTO-placement rule next). `select-api/` holds the select/dropdown (`findForSelect`) endpoints; LE/site-group selectors resolve here with SQL subtree exclusion.
+- **DTO placement depends on whether the module is backed by a LOCAL domain or PROXIES the microservice:**
+  - **core-api / admin-api backed by a core-server `domain/<x>` module** → the request DTO is the domain's own `dto/request/*-internal.dto` and the controller imports it **downward** (`@domain/<x>/dto/request/...`). Do NOT keep a duplicate copy of the internal DTO in the `core-api/` folder — that drifts (they have diverged before). One canonical DTO in the domain; delete any `core-api` twin and repoint the controller/docs down.
+  - **commerce-gateway** (`modules/commerce-gateway/*`) → PROXY: it forwards HTTP → NATS and has NO local domain (the domain lives in `commerce-service`). Its HTTP request/response DTOs **stay in the gateway feature folder** — there is nothing local to own them.
+  - **Genuinely API-only DTOs with no domain** (auth flows — `login`, `forgot-password`, `set-password`, `mobile-*`; `account/*` — `change-password`, `update-profile`; pure select/query shapes) → stay in the API layer.
 - **commerce-gateway** (`modules/commerce-gateway/`): the HTTP → NATS forwarding layer, split by scope into `org-api/`, `site-api/`, `site-group-api/`, `le-api/`. See Gateway below — it's FLAT & UNIFIED, unlike the standard modules.
 - One `module.ts` per TOP-LEVEL module — submodules are FOLDERS, not NestJS modules.
   - Simple module → folders at root (`controllers/`, `services/`, `repositories/`, `dto/`, `docs/`).
   - Complex module → `<module>.module.ts` + `root/` + one submodule folder per sub-path with its OWN service/repository.
 - Always use folders — never a flat `x.controller.ts` beside `x.module.ts` (the gateway is the exception; see below).
+
+## Class naming & DI layering (domain vs app vs controller)
+- **Domain classes carry the `Domain` infix:** every domain service is `{Name}DomainService`, every repository `{Name}DomainRepository`. File names stay `*.service.ts` / `*.repository.ts`; modules stay `{Name}DomainModule`. DI tokens ARE the classes (no string tokens) — renaming a class updates every provider/inject site.
+- **App-layer orchestration services (core-api / admin-api) are `{Name}Service`** — NO `ApiService` / `RootService` suffix (e.g. `StructureService`, `LegalEntityService`, `SiteService`, `SiteGroupService`, `UserPermissionsService`). They inject `*DomainService`/`*DomainRepository` and hold the business logic.
+- **Gateway services keep their own name** — `{Feature}GatewayService` in `<feature>-gateway.service.ts` (see Gateway below). The `{Name}Service` rule is for the local-domain-backed API layers, NOT the NATS proxy — do not rename gateway services.
+- **Controllers carry NO business logic — the defect is orchestration in a handler body, NOT the injection count.** A controller MAY inject multiple services and route each handler to one (a single delegating call + param marshalling is compliant). Any await-then-feed, branch-on-result, cross-service compose, or transaction MUST move into an app-layer `{Name}Service` the controller delegates to (e.g. the SSE status handler that composed auth + connection state was extracted this way).
 
 ## Gateway — FLAT & UNIFIED per feature (`gateway-conventions.md`)
 The commerce-gateway forwards HTTP → NATS. Each feature folder is **flat and unified** — the opposite of the split microservice/standard modules. Mirror `org-api/inventory-items`.
@@ -46,7 +57,7 @@ The commerce-gateway forwards HTTP → NATS. Each feature folder is **flat and u
 - `@IsCode()` from `@vritti/api-sdk/decorators` (`{ dotted: true }` for permission codes); DB `codeCheck('<name>', table.code)` from `@vritti/api-sdk/drizzle-pg-core`. Lowercase-kebab `^[a-z][a-z0-9-]*$`; source `api-sdk/src/decorators/code-pattern.ts`.
 
 ## Controller (`backend-controller.md`)
-- Thin HTTP layer: log, one service call, return. Every endpoint logs `METHOD /path`. Explicit return types. No business logic/exceptions/transformation.
+- Thin HTTP layer: log, delegate, return. Every endpoint logs `METHOD /path`. Explicit return types. No business logic/exceptions/transformation — a controller MAY inject multiple services and route per-endpoint, but any orchestration goes in an app `{Name}Service` (see Class naming & DI layering).
 
 ## Service / Repository / DTOs
 - Service: all business logic; call repositories (never Drizzle directly); exceptions from `@vritti/api-sdk`. (`backend-service.md`)

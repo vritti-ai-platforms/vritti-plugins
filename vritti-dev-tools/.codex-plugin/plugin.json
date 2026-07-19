@@ -1,6 +1,6 @@
 {
 	"name": "vritti-dev-tools",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"description": "Vritti development conventions, agents, skills, and hooks for monorepo projects",
 	"author": {
 		"name": "Vritti AI"

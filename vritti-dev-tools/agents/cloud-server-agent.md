@@ -16,8 +16,9 @@ You are a backend architect for the Vritti Cloud server (`vritti-cloud/apps/clou
 Follow ALL `.claude/rules/` files in `vritti-cloud`. Key rules summarized below — always defer to the actual rule files.
 
 ## Folder Structure (`backend-module-structure.md`)
-- **Domain modules** (`modules/domain/`): services + repositories ONLY — no controllers, no DTOs. `@domain/` alias → `src/modules/domain/*`. Aggregated into the `@Global()` `ServicesModule`.
-- **API layers** (`cloud-api/`, `admin-api/`, `select-api/`): controllers + DTOs + docs ONLY, no business logic. `select-api/` holds the select/dropdown (`findForSelect`) endpoints. Individual admin/cloud API modules register directly in `AppModule` (no `AdminApiModule` wrapper).
+- **Domain modules** (`modules/domain/`): services (`{Name}DomainService`) + repositories (`{Name}DomainRepository`) + the domain's OWN DTOs — input (`dto/request/*-internal.dto`) and output (`dto/entity/`). No controllers. `@domain/` alias → `src/modules/domain/*`. Aggregated into the `@Global()` `ServicesModule`. (See Class naming & DI layering below.)
+- **Dependency direction is one-way: API → domain.** A domain service NEVER imports from an API layer. It owns its input contract as an internal request DTO (`domain/<x>/dto/request/*-internal.dto`) and its output as an entity DTO; the API-layer service maps its HTTP request/response DTOs to/from those. See `backend-module-structure.md` → "Dependency direction".
+- **API layers** (`cloud-api/`, `admin-api/`, `select-api/`): controllers + their HTTP request/response DTOs + docs, no business logic. `select-api/` holds the select/dropdown (`findForSelect`) endpoints. Individual admin/cloud API modules register directly in `AppModule` (no `AdminApiModule` wrapper).
 - **Top-level modules** (`account/`): registered at the root path via `RouterModule` (NO `cloud-api`/`admin-api` prefix); use `@RequireSession(...)` for multi-session access (e.g. CLOUD + ADMIN).
 - **`core-server/` module**: the outbound HTTP client to core-server — `core-http.service`, `catalog-sync.service`, `signing-key.util`, and `core-*` services/repositories that push **signed** entitlements + catalogs (`SignedDocument<T>`) to deployments. This is a client, NOT a NATS gateway.
 - One `module.ts` per TOP-LEVEL module — submodules are FOLDERS, not NestJS modules; the parent `module.ts` registers all their controllers/providers.
@@ -30,13 +31,18 @@ Follow ALL `.claude/rules/` files in `vritti-cloud`. Key rules summarized below 
 - A module's `exports: [...]` lists ONLY services other modules inject; keep repositories + internal providers unexported.
 - **Domain modules NEVER import each other.** A cross-table read goes in the service's OWN repository — never inject another domain's repo/module. Zero `forwardRef`, zero duplicate providers.
 
+## Class naming & DI layering (domain vs app vs controller)
+- **Domain classes carry the `Domain` infix:** every domain service is `{Name}DomainService`, every repository `{Name}DomainRepository`. File names stay `*.service.ts` / `*.repository.ts`; modules stay `{Name}DomainModule`. DI tokens ARE the classes (no string tokens) — renaming a class updates every provider/inject site. When the SAME class name lives in two domains, give each a DISTINCT name (e.g. `OrganizationDomainRepository` in `domain/organization` vs `CloudOrganizationDomainRepository` in `domain/cloud-organization`) — adding the infix alone does not disambiguate.
+- **App-layer orchestration services (cloud-api / admin-api) are `{Name}Service`** — NO `ApiService` / `RootService` suffix. They inject `*DomainService`/`*DomainRepository` and hold the business logic.
+- **Controllers carry NO business logic — the defect is orchestration in a handler body, NOT the injection count.** A controller MAY inject multiple services and route each handler to one (a single delegating call + param marshalling is compliant). Any await-then-feed, branch-on-result, cross-service compose, or transaction MUST move into an app-layer `{Name}Service` the controller delegates to (e.g. the SSE status handler that composed auth + connection state was extracted this way).
+
 ## Codes (`code-conventions.md`)
 - Entity `code` fields use `@IsCode()` from `@vritti/api-sdk/decorators` (`@IsCode({ dotted: true })` for permission codes) — NEVER hand-roll `@Matches(/^[a-z…]/)`. Keep `@IsString()`/`@MaxLength()` alongside.
 - DB CHECK constraints use `codeCheck('<name>', table.code)` from `@vritti/api-sdk/drizzle-pg-core`.
 - Canonical format lowercase-kebab `^[a-z][a-z0-9-]*$`; source in `api-sdk/src/decorators/code-pattern.ts`.
 
 ## Controller (`backend-controller.md`)
-- Thin HTTP layer: log, one service call, return. One controller → one service.
+- Thin HTTP layer: log, delegate, return. May inject multiple services and route per-endpoint, but NO business logic in the body — orchestration goes in an app `{Name}Service` (see Class naming & DI layering).
 - Every endpoint MUST log `METHOD /path` (e.g., `this.logger.log('POST /cloud-api/organizations')`).
 - Decorators: `@UserId()`, `@AccessToken()`, `@RefreshTokenCookie()`, `@Public()`. Explicit return types. No business logic/exceptions/transformation. No `return await` unless inside try-catch.
 

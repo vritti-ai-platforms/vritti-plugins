@@ -9,7 +9,7 @@
 			"name": "vritti-dev-tools",
 			"source": "./vritti-dev-tools",
 			"description": "Development conventions, agents, skills, and hooks for Vritti monorepo projects",
-			"version": "1.1.0"
+			"version": "1.2.0"
 		}
 	]
 }
