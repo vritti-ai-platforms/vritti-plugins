@@ -95,6 +95,14 @@ Follow ALL `.claude/rules/` files in the current project. The key rules are summ
 - Enable `showRootError` for forms that may receive general API errors
 - API errors auto-map to form fields via `mapApiErrorsToForm`
 
+### Nullable field clears — submit transforms send the RAW value
+The bug to avoid: a cleared optional field must reach the backend as a clear. Coercing it to `undefined` drops the JSON key so the backend skips the column and the field never clears.
+- In a submit `transformSubmit`, send `key: data.x` — NEVER `data.x || undefined`, `data.x?.trim() || undefined`, `data.x.trim()`, or `cond ? data.x : undefined`. No FE `.trim()` in a submit transform: the gateway DTO's `@Trim()` decorator trims strings AND converts `''`→`null` (`@Trim({ nullify: false })` = trim only, used on required `code`/`name`).
+- Components emit a real clear sentinel: `Select`/`DatePicker` → `null` on clear; number `TextField` (`type="number"`) → `NaN`. So the value flows through; don't re-coerce it.
+- **Schema:** a SELECT/DATE field that can be cleared must be `.nullable()` in its zod schema — but ONLY if it's OPTIONAL. NEVER make a required field `.nullable()` (a cleared required field must error). Plain string fields need no schema change (`''` is a valid string; `@Trim` nullifies it).
+- **Numbers:** use `zodNumericField({ required?, integer?, positive?, nonZero?, min?, max?, nullable?, ...Message? })` from `@vritti/quantum-ui/zod` (NaN-aware: NaN→"Required" / →null when `nullable`). Pass the matching props on `<TextField type="number" positive integer min={} max={} />`. Never `data.x || undefined` on a number (drops a legit `0`).
+- Structural/ternary `: undefined` that gates a whole object, a conditional field, or a currency `data.x?.value ? data.x : undefined`, and GET-param `search || undefined`, are correct — leave them.
+
 ## Comments (`comment-style.md`)
 - `//` only — no `/** */` JSDoc
 - No comments on interfaces, types, components, or constants

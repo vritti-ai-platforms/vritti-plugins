@@ -53,6 +53,14 @@ Follow ALL `.claude/rules/` files in the current project. The key rules are summ
 - Screens call hooks, never services directly
 - `export const` for components
 
+## Forms — mirror the web form conventions exactly
+- quantum `<Form>` wires fields by `name` via each field's `fieldBinding`; NO `<Controller>`. API errors auto-map via `mapApiErrorsToForm`.
+- **Nullable field clears — send the RAW value.** In a submit/mutation-`input` builder, send `key: values.x` — NEVER `values.x || undefined`, `values.x?.trim() || undefined`, `values.x.trim()`, or `cond ? values.x : undefined`. No FE `.trim()` in a submit builder: the GraphQL `@InputType` / gateway DTO `@Trim()` decorator trims strings AND maps `''`→`null` (`@Trim({ nullify: false })` = trim only). Dropping the key means a cleared field never clears.
+- Components emit real clear sentinels: `Select`/`DatePicker` → `null` on clear. Optional SELECT/DATE zod fields that can be cleared must be `.nullable()` (or `.optional().catch(undefined)` to mirror the web) — but NEVER make a REQUIRED field nullable.
+- **Numbers:** the native `TextField` has numeric mode at parity with web — props `numeric`/`integer`/`positive`/`nonZero`/`min`/`max`; it parses input and emits `number | NaN` (NaN on clear). Pair it with `zodNumericField({...})` from `@vritti/quantum-ui-native/zod` (NaN-aware). Do NOT use the old `z.string()` + manual `Number()` pattern or `keyboardType="number-pad"` for numeric fields. Required numeric default = `Number.NaN` (or the web-matching literal), nullable = `undefined`/`null`; drop `Number()` conversions in the builder.
+- **Match the web form field-for-field:** when a form exists in commerce-mf (web), use the SAME `zodNumericField` options + the SAME `<TextField>` numeric props (e.g. tax rate = `positive` only, schema carries `min`/`max`).
+- Structural `: undefined` object/section gates and GET-arg `search || undefined` are correct — leave them.
+
 ## Route Registration (`native-screen.md`)
 - Routes are static `PushScreenConfig` arrays — not file-based routing
 - Every new screen must be added to its route array + `authenticatedRoutes.ts`

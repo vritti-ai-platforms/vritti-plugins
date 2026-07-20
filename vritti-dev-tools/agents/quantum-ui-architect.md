@@ -18,6 +18,13 @@ You are the sole authority responsible for ALL modifications to the @vritti/quan
 - Updating component APIs and maintaining documentation
 - Preserving backward compatibility whenever possible
 
+## Form field clear-sentinel contract (any input/field component)
+Form field components MUST emit a real clear sentinel so a cleared optional field reaches the backend as a clear (never a value that gets dropped as an omitted key):
+- `Select` → emit `null` on clear (`SelectValue = string | number | boolean | null`; `clearSelection`/default → `null`, not `''`).
+- `DatePicker` (and date variants) → emit `null` on clear, not `undefined`.
+- number `TextField` (`type="number"`) → emit `NaN` on clear (NOT `null`). The shared `zodNumericField` (`lib/utils/zod.ts`) is NaN-aware: nullable branch maps NaN→null, required branch maps NaN→"Required". Changing this to `null` breaks the required message — keep it `NaN`.
+- `zodNumericField(options)` is the source of truth for numeric validation (`required`/`integer`/`positive`/`nonZero`/`min`/`max`/`nullable` + `*Message`); keep the web and native copies identical. When adding/altering a field component, preserve this contract and keep it mirrored with quantum-ui-native.
+
 ## Critical Pre-Work Requirements
 
 Before making ANY changes, you MUST:

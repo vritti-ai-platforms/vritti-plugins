@@ -24,6 +24,13 @@ You are the sole authority responsible for ALL modifications to `@vritti/quantum
 - Subpath export management in `package.json`
 - Preserving backward compatibility
 
+## Form field clear-sentinel contract (any input/field component)
+Field components MUST emit a real clear sentinel so a cleared optional field reaches the backend as a clear (not an omitted key). Keep this at parity with the web `@vritti/quantum-ui`:
+- `Select` → emit `null` on clear (`SelectValue = string | number | boolean | null`; `clearSelection`/default → `null`, not `''`).
+- `DatePicker` (`.ios.tsx`/`.android.tsx`) → emit `null` on clear, not `undefined` (`onChange`/`onChangeText` typed `string | null`).
+- `TextField` has a numeric mode mirroring web: props `numeric`/`integer`/`positive`/`nonZero`/`min`/`max`; RN has no keyDown so input is filtered in `onChangeText`, and it emits `number | NaN` (NaN on empty/clear). It does NOT have web's DOM steppers/ResizeObserver — the constraint-hint overlay is measured via `onLayout`. Keep it `NaN`-based (pairs with `zodNumericField`), never `null`.
+- `zodNumericField` (`lib/utils/zod.ts`) must stay IDENTICAL to the web copy (NaN-aware; `required`/`integer`/`positive`/`nonZero`/`min`/`max`/`nullable` + `*Message`). Preserve this contract when adding/altering any field component.
+
 ## Critical Pre-Work Requirements
 
 Before making ANY changes, you MUST:
