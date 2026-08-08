@@ -111,6 +111,12 @@ The bug to avoid: a cleared optional field must reach the backend as a clear. Co
 - `export function` for services, hooks, utilities
 - `export const` for components and values
 
+## Pluralization (`pluralize.md`)
+- Use `pluralize` from `@vritti/quantum-ui/pluralize` — NEVER hand-roll `${n === 1 ? '' : 's'}` or `? 'x' : 'xs'`
+- Inclusive (count + noun together): `pluralize('service', n, true)` → "1 service" / "2 services"
+- Non-inclusive (count shown separately — ratios/prefixes): `pluralize('feature', total)` → "features"
+- Handles irregulars (`entity`→`entities`); also replace hard-coded plural labels that ignore the count
+
 ## Select/Filter (`select-filter-conventions.md`)
 - Use pre-built selectors from `@vritti/quantum-ui/selects/*`
 - Static selectors for locale, timezone, currency (no API endpoint)
