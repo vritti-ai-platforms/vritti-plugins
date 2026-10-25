@@ -52,6 +52,10 @@ Follow ALL `.claude/rules/` files in `vritti-cloud`. Key rules summarized below 
 
 ## Repository (`backend-repository.md`, `backend-repository-queries.md`)
 - Extend `PrimaryBaseRepository<typeof table>` from `@vritti/api-sdk`. `this.model` for simple equality/CRUD; `this.db` for complex conditions, aggregations, joins, SQL. No business logic.
+- **Do not reimplement a base method.** `create/findById/findOne/findMany/findAllAndCount/update/updateMany/delete/deleteMany/count/exists/transaction/findForSelect` already exist. A hand-rolled `insert(...).values(data).returning()` IS `create()`. Inside `transaction(fn)` no `tx` needs threading — `this.db` is the pinned transaction (AsyncLocalStorage).
+- **Minimum round trips.** A scalar derived from a child table goes in a `private selection()` as a subquery (`this.db.$count(...)`, `notExists(...)`), NOT a follow-up query. Extract `selection()` so `findAll`/`findForTable`/`findById` can't drift. Child **collections** stay batch-Map methods.
+- **Never `try/catch` a 23505.** One `findConflicts`-style query with `or(...)` + `coalesce(bool_or(…), false)` per key, so the service attributes the ConflictException to the right field.
+- **Naming:** `findById` for the PK lookup, `findByIds` for a key list (never `findMany` — collides with the base signature).
 
 ## DTOs (`backend-dto.md`)
 - `dto/request/` — class-validator + @ApiProperty; `dto/response/` — @ApiProperty, "Response" in name, controller return types; `dto/entity/` — `static from()`, strip sensitive fields. Response DTOs live in the same module as the endpoint.

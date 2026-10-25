@@ -44,6 +44,7 @@ The commerce-gateway forwards HTTP → NATS. Each feature folder is **flat and u
 - Controller logs `METHOD /commerce-api/<path>`; query params ALWAYS use a DTO class (never inline `@Query('field')`).
 - DataTable state key is **scope-prefixed**: `getCurrentState(userId, 'commerce-<scope>-<feature>')` (org/le/site/site-group from the sub-app) and MUST equal the frontend `useDataTable({ slug })` EXACTLY — renaming one without the other loses the user's saved view.
 - Service forwards via `this.nats.send('commerce', 'org.<feature>.<sub>.<action>', payload)` — the `cmd` MUST match the microservice `@MessagePattern` EXACTLY (`org.uom.*`, `org.uom.dimensions.*`). Service logs the NATS pattern + key params.
+- The final segment is the microservice **method name, verbatim**: single-row read by PK is `.findById` (NEVER `.get`), paginated read is `.table`, then `.create`/`.update`/`.delete`/`.bulkSetStatus`/etc. Renaming a `cmd` breaks the contract across two processes — change both sides in one commit, restart core-server AND commerce-service together, and grep both repos for the old string first (an orphaned pattern is silent until called).
 - Response types: create → `CreateResponseDto<T>`, update/delete → `SuccessResponseDto`, table → `TableResponseDto`, select → `SelectQueryResult`. Success messages include the entity name (e.g. `Unit "Gram" created successfully.`).
 - canDelete pattern: repo `hasReferences()`, DTO `canDelete: boolean`, service checks before delete, frontend disables the button.
 

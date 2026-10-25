@@ -19,6 +19,22 @@
           {
             "type": "command",
             "command": "FILE=\"$CLAUDE_FILE_PATH\"; if [[ \"$FILE\" == *.controller.ts ]] && grep -nE '^[^/]*return\\s+await\\s+' \"$FILE\" 2>/dev/null | head -3 | grep -q '.'; then echo '⚠️  WARNING: Avoid \"return await\" in controllers unless inside try-catch. Just return the Promise directly for better performance.' >&2; fi; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "FILE=\"$CLAUDE_FILE_PATH\"; if [[ \"$FILE\" == *src/db/schema/* && \"$FILE\" != *workspace-scope.ts ]] && grep -nE \"['\\\"][a-z_]+\\.[a-z_]+['\\\"]\" \"$FILE\" 2>/dev/null | grep -E \"owner:|table:|from |join \" | head -3 | grep -q '.'; then echo '❌ BLOCKED: Schema-qualified table names must not be hardcoded in a schema file. Pass the drizzle table object instead (owner: offerings, not '\"'\"'commerce.offerings'\"'\"'). See db-schema.md.' >&2; exit 1; fi; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "FILE=\"$CLAUDE_FILE_PATH\"; if [[ \"$FILE\" == *src/db/schema/* && \"$FILE\" != *workspace-scope.ts ]] && grep -q \"pgPolicy('org_isolation'\" \"$FILE\" 2>/dev/null; then echo '⚠️  WARNING: Use orgIsolationPolicy() from workspace-scope.ts instead of inlining pgPolicy(\"org_isolation\", ...). See db-schema.md.' >&2; fi; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "FILE=\"$CLAUDE_FILE_PATH\"; if [[ \"$FILE\" == *src/db/migrations/*.sql ]]; then echo '❌ BLOCKED: Never hand-write or edit a migration.sql. Use pnpm db:generate (structure) or pnpm db:generate:custom (data). See db-schema.md.' >&2; exit 1; fi; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "FILE=\"$CLAUDE_FILE_PATH\"; if [[ \"$FILE\" == *.tsx ]] && perl -0777 -ne 'while(/disabled=\\{([^{}]+)\\}\\s*(?:\\n\\s*)?disabledTip=\\{\\s*([^?{}]+?)\\s*\\?/g){my($d,$g)=($1,$2);$d=~s/^\\s+|\\s+$//g;$g=~s/^\\s+|\\s+$//g;my $n=$d;$n=~s/^!//;print 1 if $g eq $d or $g eq $n or q{!}.$g eq $d;}' \"$FILE\" 2>/dev/null | grep -q 1; then echo '⚠️  WARNING: disabledTip repeats the disabled condition. Button/Switch only render the tip when the control is actually disabled, so the ternary is dead code — pass the string directly. Keep the ternary only when the guard differs from disabled. See frontend-conventions.md.' >&2; fi; exit 0"
           }
         ]
       }
