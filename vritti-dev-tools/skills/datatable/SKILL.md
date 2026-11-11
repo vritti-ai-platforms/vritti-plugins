@@ -17,7 +17,7 @@ Place in `dto/response/<resource>-table-response.dto.ts`.
 
 ```typescript
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { TableResponseDto, type TableViewState } from '@vritti/api-sdk';
+import { TableResponseDto, type TableState } from '@vritti/api-sdk/data-table';
 import { ZoneDto } from '../entity/zone.dto';
 
 export class ZoneTableResponseDto extends TableResponseDto<ZoneDto> {
@@ -28,7 +28,7 @@ export class ZoneTableResponseDto extends TableResponseDto<ZoneDto> {
   declare count: number;
 
   @ApiProperty()
-  declare state: TableViewState;
+  declare state: TableState;
 
   @ApiPropertyOptional({ nullable: true })
   declare activeViewId: string | null;
@@ -147,11 +147,11 @@ export class FeatureService {
 
   constructor(
     private readonly featureRepository: FeatureRepository,
-    private readonly dataTableStateService: DataTableStateService,
+    private readonly tableStateService: TableStateService,
   ) {}
 
   async findForTable(userId: string): Promise<FeatureTableResponseDto> {
-    const { state, activeViewId } = await this.dataTableStateService.getCurrentState(userId, 'features');
+    const { state, activeViewId } = await this.tableStateService.getTableState(userId, 'features');
     const where = and(
       FilterProcessor.buildWhere(state.filters, FeatureService.FIELD_MAP),
       FilterProcessor.buildSearch(state.search, FeatureService.FIELD_MAP),
@@ -259,14 +259,15 @@ const TABLE_SLUG = 'features';
 export const FeaturesPage = () => {
   const queryClient = useQueryClient();
   const { versionId } = useVersionContext();
-  const { data: response, isLoading } = useFeatures(versionId);
+  const featuresTableQuery = useFeatures(versionId);
   const addDialog = useDialog();
 
-  const { table } = useDataTable({
+  // Pass the query itself; <DataTable table={…}> takes the whole output (table + isLoading + isFetching)
+  const featuresTable = useDataTable({
     columns: getColumns({ onView }),
     slug: TABLE_SLUG,
     label: 'feature',
-    serverState: response,
+    query: featuresTableQuery,
     enableRowSelection: true,   // enables checkbox column
     enableSorting: true,
     enableMultiSort: false,
@@ -275,8 +276,7 @@ export const FeaturesPage = () => {
 
   return (
     <DataTable
-      table={table}
-      isLoading={isLoading}
+      table={featuresTable}
       searchConfig={{ columns: [{ id: 'code', label: 'Code' }, { id: 'name', label: 'Name' }], searchAll: true }}
       importExport={{
         columns: [
@@ -499,7 +499,7 @@ Converts `Record<string, unknown>[]` to a spreadsheet `Buffer` in the given form
 **Shared SDK types:**
 - `api-sdk/src/database/repositories/primary-base.repository.ts` — `findAllAndCount` with `leftJoins` + `groupBy`
 - `api-sdk/src/database/dto/table-response.dto.ts` — `TableResponseDto<T>`
-- `api-sdk/src/database/filter/filter.processor.ts` — `FilterProcessor`, `FieldMap`
+- `api-sdk/src/conditions/filter.processor.ts` — `FilterProcessor`, `FieldMap` (import from `@vritti/api-sdk/conditions`)
 - `@vritti/api-sdk/xlsx` — `buildExportBuffer`, `ExportFormat`, `getExportMimeType`, `getExportExt`
 - `cloud-server/src/utils/validate-import-rows.ts` — `validateImportRows`, `ImportResult`
 
